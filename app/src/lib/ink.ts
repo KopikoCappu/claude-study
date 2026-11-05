@@ -94,8 +94,14 @@ export const textBounds = (t: TextBlock): Rect => ({
   x: t.x,
   y: t.y,
   w: t.width,
-  h: Math.max(1, t.text.split('\n').length) * textLineHeight(t) + 8,
+  h: textLineCount(t) * textLineHeight(t) + 8,
 });
+
+/** Rough number of visible lines, counting long lines that wrap (~0.5em per character on average). */
+function textLineCount(t: TextBlock): number {
+  const perLine = Math.max(1, Math.floor((t.width - 8) / ((t.size ?? TEXT_SIZE) * 0.5)));
+  return Math.max(1, t.text.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / perLine)), 0));
+}
 
 export const mathBounds = (m: MathBlock): Rect => ({ x: m.x, y: m.y, w: m.w, h: m.h });
 

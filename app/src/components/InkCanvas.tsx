@@ -597,22 +597,31 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
 
       {/* Typed text blocks: editable only with the text tool so drawing over them still works */}
       <Animated.View style={[styles.layer, overlayStyle]} pointerEvents={tool === 'text' ? 'box-none' : 'none'}>
-        {page.texts.map((t) => (
-          <TextInput
-            key={t.id}
-            value={t.text}
-            multiline
-            autoFocus={editingText === t.id}
-            placeholder="Type…"
-            placeholderTextColor={C.muted}
-            onChangeText={(text) => updatePage(pageId, (p) => ({ texts: p.texts.map((x) => (x.id === t.id ? { ...x, text } : x)) }))}
-            onBlur={() => {
-              setEditingText(null);
-              if (!t.text.trim()) updatePage(pageId, (p) => ({ texts: p.texts.filter((x) => x.id !== t.id) }));
-            }}
-            style={[styles.textBlock, textStyle(t, tFor(selection?.textIds, t.id), textColor), selection?.textIds.includes(t.id) && styles.textSelected]}
-          />
-        ))}
+        {page.texts.map((t) => {
+          const { left, top, width, ...font } = textStyle(t, tFor(selection?.textIds, t.id), textColor);
+          return (
+            <View key={t.id} style={[styles.textWrap, { left, top, width }, selection?.textIds.includes(t.id) && styles.textSelected]}>
+              {/* Invisible copy of the text sizes the box, so it grows to fit everything instead of scrolling */}
+              <Text style={[styles.textPad, font, styles.textSizer]} aria-hidden pointerEvents="none">
+                {t.text.endsWith('\n') || !t.text ? `${t.text} ` : t.text}
+              </Text>
+              <TextInput
+                value={t.text}
+                multiline
+                scrollEnabled={false}
+                autoFocus={editingText === t.id}
+                placeholder="Type…"
+                placeholderTextColor={C.muted}
+                onChangeText={(text) => updatePage(pageId, (p) => ({ texts: p.texts.map((x) => (x.id === t.id ? { ...x, text } : x)) }))}
+                onBlur={() => {
+                  setEditingText(null);
+                  if (!t.text.trim()) updatePage(pageId, (p) => ({ texts: p.texts.filter((x) => x.id !== t.id) }));
+                }}
+                style={[StyleSheet.absoluteFill, styles.textPad, font]}
+              />
+            </View>
+          );
+        })}
       </Animated.View>
 
       {/* Equations (KaTeX on web). Their measured size feeds hit-testing, lasso and AI placement. */}
@@ -768,11 +777,9 @@ const useStyles = makeStyles((C) => ({
   root: { flex: 1, overflow: 'hidden' },
   // Overlays share the canvas transform; origin top-left so page (0,0) maps like the Skia group.
   layer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, transformOrigin: 'left top' },
-  textBlock: {
-    position: 'absolute',
-    paddingHorizontal: 4,
-    paddingVertical: 0,
-  },
+  textWrap: { position: 'absolute' },
+  textPad: { paddingHorizontal: 4, paddingVertical: 0 },
+  textSizer: { opacity: 0 },
   textSelected: { backgroundColor: 'rgba(47,111,235,0.10)', borderRadius: 4 },
   note: { position: 'absolute', fontFamily: 'Caveat_600SemiBold' },
   math: { position: 'absolute', paddingHorizontal: 4, borderRadius: 4 },
