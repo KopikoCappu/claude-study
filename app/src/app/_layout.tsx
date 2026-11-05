@@ -6,11 +6,14 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PdfRenderHost } from '@/components/PdfRenderHost';
 import { RecorderHost } from '@/components/Recorder';
+import { startAnalytics } from '@/lib/analytics';
 import { indexHandwriting } from '@/lib/inkIndex';
 import { useStore } from '@/lib/store';
 import { startSync } from '@/lib/sync';
 
 SplashScreen.preventAutoHideAsync();
+// Anonymous page views, website only.
+startAnalytics();
 // Accounts + cloud sync (no-op when the build has no Supabase config).
 startSync();
 // Handwriting search: read any notes changed since last time (notes and the AI key load from storage first).
