@@ -1,0 +1,781 @@
+import { Canvas, Circle, DashPathEffect, Group, Image as SkiaImage, Path, Rect, Skia, type SkPath } from '@shopify/react-native-skia';
+import { memo, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { GestureDetector, PointerType, usePanGesture, usePinchGesture, useSimultaneousGestures } from 'react-native-gesture-handler';
+import Animated, { cancelAnimation, FadeIn, useAnimatedStyle, useDerivedValue, useSharedValue, withDecay, withDelay, withTiming } from 'react-native-reanimated';
+import { MathView } from '@/components/MathView';
+import { deskColor, isDark, PaperBackground } from '@/components/PaperBackground';
+import { annotationPath } from '@/lib/annotations';
+import { useAudioState } from '@/lib/audioState';
+import {
+  buildPath,
+  eraseStrokes,
+  hitTest,
+  IDENTITY,
+  makeSelection,
+  mapRect,
+  mapX,
+  mapY,
+  mathBounds,
+  rectContains,
+  selectWithLasso,
+  shapePoints,
+  strokePath,
+  strokesHitAt,
+  TEXT_LINE_HEIGHT,
+  TEXT_SIZE,
+  textBounds,
+  textLineHeight,
+  transformSelection,
+  uid,
+  type Transform,
+} from '@/lib/ink';
+import { skImageFor } from '@/lib/snapshot';
+import { useStore } from '@/lib/store';
+import { makeStyles, useTheme } from '@/lib/theme';
+import type { Annotation, Page, Point, Rect as PageRect, Selection, Stroke } from '@/lib/types';
+import { clampViewport, docHeight, DESK_PAD, fitScale, fitToWidth, PAGE_W, pageCountFor, pageTop, scrollBounds, snapToRule } from '@/lib/pages';
+import { clampZoom, toPage, zoomAt, type Viewport } from '@/lib/viewport';
+
+type Props = {
+  pageId: string;
+  selection: Selection | null;
+  onSelectionChange: (s: Selection | null) => void;
+  viewport: Viewport;
+  /** true while the selection is being moved/resized (hide the action bar meanwhile) */
+  onTransformingChange?: (active: boolean) => void;
+  /** Page of the note to show first (0-based), e.g. from a search result. */
+  initialPage?: number;
+};
+
+type Mode = 'idle' | 'draw' | 'erase' | 'pan' | 'move' | 'resize';
+
+/** Clock for gesture timing (touch handlers only, never during render). */
+const nowMs = () => Date.now();
+
+const SEL_PAD = 12; // page units of breathing room around a selection box
+const padRect = (r: PageRect): PageRect => ({ x: r.x - SEL_PAD, y: r.y - SEL_PAD, w: r.w + SEL_PAD * 2, h: r.h + SEL_PAD * 2 });
+
+export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTransformingChange, initialPage = 0 }: Props) {
+  const C = useTheme();
+  const styles = useStyles();
+  const page = useStore((s) => s.pages[pageId]);
+  const tool = useStore((s) => s.tool);
+  const color = useStore((s) => s.color);
+  const highlighterColor = useStore((s) => s.highlighterColor);
+  const sizes = useStore((s) => s.sizes);
+  const updatePage = useStore((s) => s.updatePage);
+  // While a recording plays, ink written after the current moment is dimmed.
+  const playAt = useAudioState((s) => (s.playback?.pageId === pageId ? s.playback.at : null));
+  // The stroke being drawn lives in shared values, not React state: every pen sample updates just the
+  // live path instead of re-rendering the whole canvas (that re-render is what made ink lag behind the pen).
+  // `drawing` only flips at the start and end of a stroke.
+  const [drawing, setDrawing] = useState(false);
+  const livePath = useSharedValue<SkPath>(EMPTY_PATH);
+  const [editingText, setEditingText] = useState<string | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [erasing, setErasing] = useState(false);
+  const eraserX = useSharedValue(0);
+  const eraserY = useSharedValue(0);
+  /** live preview of a move/resize, committed to the page on release */
+  const [xf, setXf] = useState<Transform | null>(null);
+  const pageCount = page ? pageCountFor(page) : 1;
+  // Read by gesture/wheel callbacks (which must not capture stale render values).
+  const docRef = useRef({ w: 0, h: 0, pages: 1, fitted: false, lastW: 0 });
+  useEffect(() => {
+    docRef.current.pages = pageCount;
+  }, [pageCount]);
+  const keepOnPage = () => clampViewport(viewport, docRef.current.w, docRef.current.h, docRef.current.pages);
+  const rootRef = useRef<ComponentRef<typeof View>>(null);
+
+  // Gesture callbacks read from refs / getState() so they never see stale render values.
+  const g = useRef({
+    mode: 'idle' as Mode,
+    stylus: false,
+    erasedOnce: false,
+    /** previous eraser position, so a fast swipe erases everything in between */
+    lastErase: null as [number, number] | null,
+    /** when the current stroke started (epoch ms) */
+    startedAt: 0,
+    points: [] as Point[],
+    /** Web: every pen sample the browser recorded (it batches them per frame), queued for the next update */
+    samples: [] as Point[],
+    pan: { x: 0, y: 0, tx: 0, ty: 0 },
+    tf: { x0: 0, y0: 0, ax: 0, ay: 0, w: 1, h: 1 },
+    xf: IDENTITY,
+  });
+    const onSelRef = useRef(onSelectionChange);
+  const selRef = useRef(selection);
+  const onXfRef = useRef(onTransformingChange);
+  useEffect(() => {
+    onSelRef.current = onSelectionChange;
+    selRef.current = selection;
+    onXfRef.current = onTransformingChange;
+  }, [onSelectionChange, selection, onTransformingChange]);
+
+  function setPreview(t: Transform | null) {
+    g.current.xf = t ?? IDENTITY;
+    setXf(t);
+  }
+
+  function cancelStroke() {
+    if (g.current.mode === 'move' || g.current.mode === 'resize') onXfRef.current?.(false);
+    g.current.mode = 'idle';
+    g.current.points = [];
+    g.current.samples = [];
+    // The live path is hidden by `drawing` in the same render that adds the finished stroke (no flicker);
+    // it's reset when the next stroke starts.
+    setDrawing(false);
+    setErasing(false);
+    setPreview(null);
+  }
+
+  function showLive() {
+    livePath.set(makeLivePath(g.current.points, g.current.stylus));
+  }
+
+  // Two-finger scroll/zoom state (see pan2/pinch below). Declared before `draw`, which resets it.
+  const two = useRef({ active: false, panning: false, pinching: false, cx: 0, cy: 0, lastScale: 1, vx: 0, vy: 0 });
+
+  const draw = usePanGesture({
+    minDistance: 0,
+    runOnJS: true,
+    maxPointers: 1,
+    onActivate: (e) => {
+      // This gesture starts with the first finger/pen, so nothing else can be touching yet: clear any
+      // leftover two-finger state rather than ignoring the touch.
+      two.current.active = false;
+      const { tool, penOnly } = useStore.getState();
+      const isPen = e.pointerType === PointerType.STYLUS;
+      g.current.stylus = isPen;
+      g.current.erasedOnce = false;
+      g.current.lastErase = null;
+      g.current.startedAt = nowMs();
+      g.current.samples = [];
+      // Pen-only mode: fingers scroll the page instead of drawing (palm rejection).
+      cancelAnimation(viewport.tx);
+      cancelAnimation(viewport.ty);
+      if (penOnly && !isPen) {
+        g.current.mode = 'pan';
+        g.current.pan = { x: e.x, y: e.y, tx: viewport.tx.get(), ty: viewport.ty.get() };
+        return;
+      }
+      const [px, py] = toPage(viewport, e.x, e.y);
+
+      // Lasso tool + existing selection: corner handle = resize, inside = move.
+      const sel = selRef.current;
+      if (tool === 'lasso' && sel) {
+        const b = padRect(sel.bounds);
+        const tol = 22 / viewport.scale.get();
+        const corners: [number, number][] = [
+          [b.x, b.y],
+          [b.x + b.w, b.y],
+          [b.x, b.y + b.h],
+          [b.x + b.w, b.y + b.h],
+        ];
+        const ci = corners.findIndex(([cx, cy]) => Math.hypot(px - cx, py - cy) < tol);
+        if (ci >= 0) {
+          const [ax, ay] = corners[3 - ci]; // the opposite corner stays put
+          g.current.mode = 'resize';
+          g.current.tf = { x0: px, y0: py, ax, ay, w: b.w, h: b.h };
+          setPreview({ ...IDENTITY, ax, ay });
+          onXfRef.current?.(true);
+          return;
+        }
+        if (rectContains(b, px, py)) {
+          g.current.mode = 'move';
+          g.current.tf = { ...g.current.tf, x0: px, y0: py };
+          setPreview(IDENTITY);
+          onXfRef.current?.(true);
+          return;
+        }
+      }
+      if (tool !== 'text') onSelRef.current(null);
+      if (tool === 'eraser') {
+        g.current.mode = 'erase';
+        setErasing(true);
+        return erase(px, py);
+      }
+      if (tool === 'text') {
+        g.current.mode = 'draw';
+        g.current.points = [[px, py, 0.5]];
+        return;
+      }
+      g.current.mode = 'draw';
+      g.current.points = [[px, py, e.stylusData?.pressure ?? 0.5]];
+      showLive();
+      setDrawing(true);
+    },
+    onUpdate: (e) => {
+      if (two.current.active) return;
+      const m = g.current.mode;
+      if (m === 'pan') {
+        viewport.tx.set(g.current.pan.tx + e.x - g.current.pan.x);
+        viewport.ty.set(g.current.pan.ty + e.y - g.current.pan.y);
+        keepOnPage();
+        return;
+      }
+      const [px, py] = toPage(viewport, e.x, e.y);
+      if (m === 'move') return setPreview({ ...IDENTITY, dx: px - g.current.tf.x0, dy: py - g.current.tf.y0 });
+      if (m === 'resize') {
+        const { ax, ay, w, h } = g.current.tf;
+        const sc = Math.max(0.1, Math.max(Math.abs(px - ax) / w, Math.abs(py - ay) / h));
+        return setPreview({ ax, ay, s: sc, dx: 0, dy: 0 });
+      }
+      if (m === 'erase') return erase(px, py);
+      if (m !== 'draw') return;
+      const { tool } = useStore.getState();
+      if (tool === 'text') return;
+      // On web, use every sample the browser recorded since the last update (Apple Pencil sends ~240/s,
+      // but only one event per frame reaches us) so fast curves don't turn into straight segments.
+      const fresh: Point[] = g.current.samples.length ? g.current.samples : [[px, py, e.stylusData?.pressure ?? 0.5]];
+      g.current.samples = [];
+      // Shapes only need the drag start + current point.
+      g.current.points = tool === 'shape' ? [g.current.points[0], fresh[fresh.length - 1]] : g.current.points.concat(fresh);
+      showLive();
+    },
+    onDeactivate: (e) => {
+      const m = g.current.mode;
+      if (m === 'pan') {
+        cancelStroke();
+        if (!e.canceled && !two.current.active) settle(e.velocityX, e.velocityY); // flick keeps scrolling
+        return;
+      }
+      const pts = g.current.points;
+      const t = g.current.xf;
+      cancelStroke();
+
+      if ((m === 'move' || m === 'resize') && !e.canceled) {
+        const sel = selRef.current;
+        const moved = Math.abs(t.dx) + Math.abs(t.dy) > 0.5 || Math.abs(t.s - 1) > 0.005;
+        if (sel && moved) {
+          updatePage(pageId, (p) => transformSelection(p, sel, t), true); // one undo step
+          onSelRef.current(makeSelection(useStore.getState().pages[pageId], sel));
+        }
+        return;
+      }
+      if (m !== 'draw' || e.canceled || !pts.length) return;
+
+      const { tool, color, highlighterColor, sizes, shapeKind, pages } = useStore.getState();
+      const page = pages[pageId];
+      const xs = pts.map((p) => p[0]);
+      const ys = pts.map((p) => p[1]);
+      const tap = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * viewport.scale.get() < 8;
+
+      // Audio bar open: tapping ink plays what was being said when it was written (instead of drawing a dot).
+      const { seek, recording } = useAudioState.getState();
+      if (seek && tap) {
+        const timed = page.strokes.filter((st) => st.at != null);
+        const hitId = strokesHitAt(timed, pts[0][0], pts[0][1], 10 / viewport.scale.get()).pop();
+        const target = timed.find((st) => st.id === hitId);
+        if (target?.at != null && seek(target.at)) return;
+      }
+      // Stamp strokes drawn while this note is recording, so they can be replayed later.
+      const at = recording?.pageId === pageId ? g.current.startedAt : undefined;
+
+      if (tool === 'pen' || tool === 'highlighter') {
+        const stroke: Stroke = {
+          id: uid(),
+          tool,
+          color: tool === 'highlighter' ? highlighterColor : color,
+          size: sizes[tool],
+          points: pts,
+          stylus: g.current.stylus,
+          ...(at ? { at } : {}),
+        };
+        updatePage(pageId, (p) => ({ strokes: [...p.strokes, stroke] }), true);
+      } else if (tool === 'shape') {
+        const [a, b] = [pts[0], pts[pts.length - 1]];
+        if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 3) return;
+        const stroke: Stroke = { id: uid(), tool: 'shape', color, size: sizes.pen, points: shapePoints(shapeKind, a[0], a[1], b[0], b[1], sizes.pen), stylus: false, ...(at ? { at } : {}) };
+        updatePage(pageId, (p) => ({ strokes: [...p.strokes, stroke] }), true);
+      } else if (tool === 'lasso') {
+        // A tap (no real loop) selects the single object under the pen; a drag is a normal lasso.
+        if (tap) onSelRef.current(hitTest(page, pts[0][0], pts[0][1], 10 / viewport.scale.get()));
+        else onSelRef.current(selectWithLasso(pts, page));
+      } else if (tool === 'text') {
+        const [x, y] = pts[0];
+        const id = uid();
+        // On ruled paper, snap typed text onto the nearest line.
+        const top = (page.paper ?? 'blank') === 'blank' ? y - TEXT_LINE_HEIGHT / 2 : snapToRule(y, TEXT_LINE_HEIGHT);
+        updatePage(pageId, (p) => ({ texts: [...p.texts, { id, x, y: top, width: 360, text: '' }] }), true);
+        setEditingText(id);
+      }
+    },
+  });
+
+  // Two fingers: drag to scroll, pinch to zoom, both at once.
+  // The two-finger pan reports the midpoint of the fingers (averageTouches; on Android it would otherwise
+  // follow just one finger) and starts as soon as two fingers are down. The pinch only supplies how much
+  // the fingers spread; the zoom is anchored at that midpoint. Every event applies only the change since
+  // the previous one, so the two handlers can start and stop in any order without the page jumping.
+
+  function twoBegin() {
+    const t = two.current;
+    if (!t.active) {
+      cancelStroke();
+      cancelAnimation(viewport.tx);
+      cancelAnimation(viewport.ty);
+    }
+    t.active = true;
+  }
+
+  function twoFinish(vx = 0, vy = 0) {
+    const t = two.current;
+    if (t.panning || t.pinching) return; // the other two-finger handler is still going
+    t.active = false;
+    settle(vx, vy);
+  }
+
+  /** After a scroll/zoom: keep the page on screen, and keep gliding after a flick (stopping at the ends). */
+  function settle(vx: number, vy: number) {
+    const { w, h, pages } = docRef.current;
+    if (!w || !h) return;
+    const docW = PAGE_W * viewport.scale.get();
+    clampViewport(viewport, w, h, pages);
+    const b = scrollBounds(viewport.scale.get(), w, h, pages);
+    if (Number.isFinite(vy) && Math.abs(vy) > 80 && b.minTy < b.maxTy) viewport.ty.set(withDecay({ velocity: vy, clamp: [b.minTy, b.maxTy] }));
+    if (docW + DESK_PAD * 2 > w && Number.isFinite(vx) && Math.abs(vx) > 80 && b.minTx < b.maxTx)
+      viewport.tx.set(withDecay({ velocity: vx, clamp: [b.minTx, b.maxTx] }));
+  }
+
+  const pan2 = usePanGesture({
+    runOnJS: true,
+    minPointers: 2,
+    maxPointers: 2,
+    minDistance: 0,
+    averageTouches: true,
+    onActivate: (e) => {
+      twoBegin();
+      Object.assign(two.current, { panning: true, cx: e.x, cy: e.y, vx: 0, vy: 0 });
+    },
+    onUpdate: (e) => {
+      const t = two.current;
+      if (!t.panning) return;
+      viewport.tx.set(viewport.tx.get() + e.x - t.cx);
+      viewport.ty.set(viewport.ty.get() + e.y - t.cy);
+      clampViewport(viewport, docRef.current.w, docRef.current.h, docRef.current.pages);
+      Object.assign(t, { cx: e.x, cy: e.y, vx: e.velocityX, vy: e.velocityY });
+    },
+    onFinalize: () => {
+      const t = two.current;
+      if (!t.panning) return;
+      t.panning = false;
+      twoFinish(t.pinching ? 0 : t.vx, t.pinching ? 0 : t.vy);
+    },
+  });
+
+  const pinch = usePinchGesture({
+    runOnJS: true,
+    onActivate: (e) => {
+      twoBegin();
+      Object.assign(two.current, { pinching: true, lastScale: e.scale || 1 });
+    },
+    onUpdate: (e) => {
+      const t = two.current;
+      if (!t.pinching || !e.scale) return;
+      const s0 = viewport.scale.get();
+      const s = clampZoom(s0 * (e.scale / (t.lastScale || 1)));
+      t.lastScale = e.scale;
+      if (!t.panning) return; // no midpoint yet (the two-finger pan starts with the second finger)
+      // Zoom around the fingers' midpoint: that page point stays under the fingers.
+      const px = (t.cx - viewport.tx.get()) / s0;
+      const py = (t.cy - viewport.ty.get()) / s0;
+      viewport.scale.set(s);
+      viewport.tx.set(t.cx - px * s);
+      viewport.ty.set(t.cy - py * s);
+      clampViewport(viewport, docRef.current.w, docRef.current.h, docRef.current.pages);
+    },
+    onFinalize: () => {
+      const t = two.current;
+      if (!t.pinching) return;
+      t.pinching = false;
+      twoFinish();
+    },
+  });
+
+  const gesture = useSimultaneousGestures(draw, pan2, pinch);
+
+  // Web: wheel/trackpad scrolls, Ctrl/Cmd+wheel (or trackpad pinch) zooms at the cursor.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const el = rootRef.current as unknown as HTMLElement | null;
+    if (!el?.addEventListener) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      if (e.ctrlKey || e.metaKey) zoomAt(viewport, viewport.scale.get() * Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
+      else {
+        viewport.tx.set(viewport.tx.get() - e.deltaX);
+        viewport.ty.set(viewport.ty.get() - e.deltaY);
+      }
+      clampViewport(viewport, docRef.current.w, docRef.current.h, docRef.current.pages);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [viewport]);
+
+  // Web: collect the browser's coalesced pointer samples while drawing. Capture phase on the canvas root,
+  // so they're queued before the gesture handler (on a child view) reports the same event.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const el = rootRef.current as unknown as HTMLElement | null;
+    if (!el?.addEventListener) return;
+    const onMove = (e: PointerEvent) => {
+      if (g.current.mode !== 'draw' || two.current.active) return;
+      const r = el.getBoundingClientRect();
+      const s = viewport.scale.get();
+      const tx = viewport.tx.get();
+      const ty = viewport.ty.get();
+      const events = e.getCoalescedEvents?.() ?? [];
+      for (const ev of events.length ? events : [e]) {
+        const pressure = ev.pointerType === 'pen' ? ev.pressure || 0.5 : 0.5;
+        g.current.samples.push([(ev.clientX - r.left - tx) / s, (ev.clientY - r.top - ty) / s, pressure]);
+      }
+    };
+    el.addEventListener('pointermove', onMove, { capture: true });
+    return () => el.removeEventListener('pointermove', onMove, { capture: true });
+  }, [viewport]);
+
+  function erase(x: number, y: number) {
+    eraserX.set(x);
+    eraserY.set(y);
+    const { pages, sizes, eraserMode } = useStore.getState();
+    const page = pages[pageId];
+    if (!page) return;
+    const [lx, ly] = g.current.lastErase ?? [x, y];
+    g.current.lastErase = [x, y];
+    const strokes = eraseStrokes(page.strokes, lx, ly, x, y, sizes.eraser / viewport.scale.get(), eraserMode);
+    // Typed text and equations are erased whole when the eraser touches them.
+    const hitText = page.texts.filter((t) => rectContains(textBounds(t), x, y)).map((t) => t.id);
+    const hitMath = (page.maths ?? []).filter((m) => rectContains(mathBounds(m), x, y)).map((m) => m.id);
+    if (!strokes && !hitText.length && !hitMath.length) return;
+    updatePage(
+      pageId,
+      (p) => ({
+        strokes: strokes ?? p.strokes,
+        texts: p.texts.filter((t) => !hitText.includes(t.id)),
+        maths: (p.maths ?? []).filter((m) => !hitMath.includes(m.id)),
+      }),
+      !g.current.erasedOnce,
+    );
+    g.current.erasedOnce = true;
+  }
+
+  // Page -> screen transform for both the Skia layer and the RN overlays.
+  const { scale, tx, ty } = viewport;
+  const transform = useDerivedValue(() => [{ translateX: tx.get() }, { translateY: ty.get() }, { scale: scale.get() }]);
+  const overlayStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.get() }, { translateY: ty.get() }, { scale: scale.get() }] }));
+  const eraserR = useDerivedValue(() => sizes.eraser / scale.get(), [sizes.eraser]);
+  const hairline = useDerivedValue(() => 1.5 / scale.get());
+  const handleR = useDerivedValue(() => 7 / scale.get()); // handles stay the same size on screen
+
+  if (!page) return null;
+  const bg = page.bg ?? '#FFFFFF';
+  const textColor = isDark(bg) ? '#F2F2F2' : '#141413'; // follows the paper, not the app theme
+  // While moving/resizing, selected items render through `xfTransform` instead of in place.
+  const moving = !!(xf && selection);
+  const selStrokes = new Set(moving ? selection!.strokeIds : []);
+  const selImages = new Set(moving ? selection!.imageIds : []);
+  const selAnns = new Set(moving ? (selection!.annotationIds ?? []) : []);
+  const xfTransform = xf ? [{ translateX: xf.ax + xf.dx }, { translateY: xf.ay + xf.dy }, { scale: xf.s }, { translateX: -xf.ax }, { translateY: -xf.ay }] : [];
+  const selBox = selection ? mapRect(xf ?? IDENTITY, padRect(selection.bounds)) : null;
+  const tFor = (ids: string[] | undefined, id: string) => (xf && ids?.includes(id) ? xf : IDENTITY);
+
+  return (
+    <View
+      ref={rootRef}
+      style={[styles.root, { backgroundColor: deskColor(bg, C) }]}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        setCanvasSize({ width, height });
+        docRef.current.w = width;
+        docRef.current.h = height;
+        // Open fitted to the page width, at the top of page 1.
+        const prevW = docRef.current.lastW;
+        docRef.current.lastW = width;
+        if (!docRef.current.fitted && width > 0) {
+          docRef.current.fitted = true;
+          fitToWidth(viewport, width, Math.min(initialPage, docRef.current.pages - 1));
+        } else if (prevW > 0 && Math.abs(width - prevW) > 1) {
+          // Rotated (or the side panel opened): if the page was fitted to the old width, refit it to the
+          // new one, keeping the same spot of the document at the top of the screen.
+          const s0 = viewport.scale.get();
+          const wasFitted = Math.abs(s0 - fitScale(prevW)) < 0.02;
+          const s = wasFitted ? fitScale(width) : s0;
+          const topY = (DESK_PAD - viewport.ty.get()) / s0;
+          viewport.scale.set(s);
+          viewport.tx.set((width - PAGE_W * s) / 2);
+          viewport.ty.set(DESK_PAD - topY * s);
+          clampViewport(viewport, width, height, docRef.current.pages);
+        } else clampViewport(viewport, width, height, docRef.current.pages);
+      }}
+    >
+      <GestureDetector gesture={gesture}>
+        <View style={StyleSheet.absoluteFill} collapsable={false}>
+          <Canvas style={StyleSheet.absoluteFill}>
+            <Group transform={transform}>
+              <PaperBackground paper={page.paper ?? 'blank'} bg={bg} pageCount={pageCount} width={canvasSize.width} height={canvasSize.height} viewport={viewport} />
+
+              {page.images
+                .filter((im) => !selImages.has(im.id))
+                .map((im) => (
+                  <PageImageView key={im.id} im={im} />
+                ))}
+              {page.strokes
+                .filter((st) => !selStrokes.has(st.id))
+                .map((st) => (
+                  <StrokeView key={st.id} s={st} dim={playAt != null && st.at != null && st.at > playAt} />
+                ))}
+
+              {moving && (
+                <Group transform={xfTransform}>
+                  {page.images
+                    .filter((im) => selImages.has(im.id))
+                    .map((im) => (
+                      <PageImageView key={im.id} im={im} />
+                    ))}
+                  {page.strokes
+                    .filter((st) => selStrokes.has(st.id))
+                    .map((st) => (
+                      <StrokeView key={st.id} s={st} />
+                    ))}
+                </Group>
+              )}
+
+              {drawing && tool === 'lasso' && (
+                <Path path={livePath} color={C.focus} style="stroke" strokeWidth={hairline}>
+                  <DashPathEffect intervals={[8, 6]} />
+                </Path>
+              )}
+              {drawing && tool === 'highlighter' && (
+                <Path path={livePath} color={highlighterColor} opacity={0.35} style="stroke" strokeWidth={sizes.highlighter} strokeCap="round" strokeJoin="round" />
+              )}
+              {drawing && tool === 'shape' && <Path path={livePath} color={color} style="stroke" strokeWidth={sizes.pen} strokeCap="round" strokeJoin="round" />}
+              {drawing && tool === 'pen' && <Path path={livePath} color={color} />}
+
+              {erasing && tool === 'eraser' && <Circle cx={eraserX} cy={eraserY} r={eraserR} color={C.muted} style="stroke" strokeWidth={hairline} />}
+
+              {selBox && (
+                <>
+                  <Rect x={selBox.x} y={selBox.y} width={selBox.w} height={selBox.h} color={C.focus} style="stroke" strokeWidth={hairline}>
+                    <DashPathEffect intervals={[6, 5]} />
+                  </Rect>
+                  {tool === 'lasso' &&
+                    [
+                      [selBox.x, selBox.y],
+                      [selBox.x + selBox.w, selBox.y],
+                      [selBox.x, selBox.y + selBox.h],
+                      [selBox.x + selBox.w, selBox.y + selBox.h],
+                    ].map(([cx, cy], i) => (
+                      <Group key={i}>
+                        <Circle cx={cx} cy={cy} r={handleR} color="#FFFFFF" />
+                        <Circle cx={cx} cy={cy} r={handleR} color={C.focus} style="stroke" strokeWidth={hairline} />
+                      </Group>
+                    ))}
+                </>
+              )}
+
+              {page.annotations
+                .filter((a) => !selAnns.has(a.id))
+                .map((a) => (
+                  <AnnotationStroke key={a.id} a={a} />
+                ))}
+              {moving && (
+                <Group transform={xfTransform}>
+                  {page.annotations
+                    .filter((a) => selAnns.has(a.id))
+                    .map((a) => (
+                      <AnnotationStroke key={a.id} a={a} />
+                    ))}
+                </Group>
+              )}
+            </Group>
+          </Canvas>
+        </View>
+      </GestureDetector>
+
+      {/* Typed text blocks: editable only with the text tool so drawing over them still works */}
+      <Animated.View style={[styles.layer, overlayStyle]} pointerEvents={tool === 'text' ? 'box-none' : 'none'}>
+        {page.texts.map((t) => (
+          <TextInput
+            key={t.id}
+            value={t.text}
+            multiline
+            autoFocus={editingText === t.id}
+            placeholder="Type…"
+            placeholderTextColor={C.muted}
+            onChangeText={(text) => updatePage(pageId, (p) => ({ texts: p.texts.map((x) => (x.id === t.id ? { ...x, text } : x)) }))}
+            onBlur={() => {
+              setEditingText(null);
+              if (!t.text.trim()) updatePage(pageId, (p) => ({ texts: p.texts.filter((x) => x.id !== t.id) }));
+            }}
+            style={[styles.textBlock, textStyle(t, tFor(selection?.textIds, t.id), textColor), selection?.textIds.includes(t.id) && styles.textSelected]}
+          />
+        ))}
+      </Animated.View>
+
+      {/* Equations (KaTeX on web). Their measured size feeds hit-testing, lasso and AI placement. */}
+      <Animated.View style={[styles.layer, overlayStyle]} pointerEvents="none">
+        {(page.maths ?? []).map((m) => (
+          <View
+            key={m.id}
+            style={[
+              styles.math,
+              { left: mapX(tFor(selection?.mathIds, m.id), m.x), top: mapY(tFor(selection?.mathIds, m.id), m.y) },
+              selection?.mathIds.includes(m.id) && styles.textSelected,
+            ]}
+            onLayout={(e) => {
+              const { width, height } = e.nativeEvent.layout;
+              if (!xf && (Math.abs(width - m.w) > 2 || Math.abs(height - m.h) > 2))
+                updatePage(pageId, (p) => ({ maths: (p.maths ?? []).map((x) => (x.id === m.id ? { ...x, w: width, h: height } : x)) }));
+            }}
+          >
+            <MathView latex={m.latex} color={m.color ?? textColor} fontSize={(m.size ?? 24) * tFor(selection?.mathIds, m.id).s} />
+          </View>
+        ))}
+      </Animated.View>
+
+      {/* "+ Add page" under the last page (only the button takes touches) */}
+      <Animated.View style={[styles.layer, overlayStyle]} pointerEvents="box-none">
+        <Pressable
+          onPress={() => {
+            updatePage(pageId, (p) => ({ pageCount: pageCountFor(p) + 1 }), true);
+            // Scroll so the new page's top is in view.
+            viewport.ty.set(DESK_PAD * 4 - pageTop(pageCount) * viewport.scale.get());
+            clampViewport(viewport, docRef.current.w, docRef.current.h, pageCount + 1);
+          }}
+          style={({ pressed }) => [styles.addPage, { left: PAGE_W / 2 - 70, top: docHeight(pageCount) + 14 }, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={[styles.addPageText, isDark(bg) && { color: '#DDD' }]}>＋ Add page</Text>
+        </Pressable>
+      </Animated.View>
+
+      {/* AI margin notes in handwriting font */}
+      <Animated.View style={[styles.layer, overlayStyle]} pointerEvents="none">
+        {page.annotations
+          .filter((a) => a.kind === 'note' && a.text)
+          .map((a) => (
+            <AiNote
+              key={a.id}
+              a={a}
+              tt={tFor(selection?.annotationIds, a.id)}
+              selected={!!selection?.annotationIds?.includes(a.id)}
+              onMeasure={(w, h) => {
+                // Real rendered size → accurate tap/lasso targets and AI placement.
+                if (!xf && (Math.abs(w - a.rect.w) > 2 || Math.abs(h - a.rect.h) > 2))
+                  updatePage(pageId, (p) => ({ annotations: p.annotations.map((x) => (x.id === a.id ? { ...x, rect: { ...x.rect, w, h } } : x)) }));
+              }}
+            />
+          ))}
+      </Animated.View>
+    </View>
+  );
+}
+
+const EMPTY_PATH = Skia.PathBuilder.Make().detach();
+
+/** Preview path for the stroke in progress, for the current tool. */
+function makeLivePath(points: Point[], stylus: boolean): SkPath {
+  const { tool, sizes, shapeKind } = useStore.getState();
+  if (!points.length) return EMPTY_PATH;
+  if (tool === 'lasso') {
+    const p = Skia.PathBuilder.Make();
+    p.moveTo(points[0][0], points[0][1]);
+    for (const [x, y] of points) p.lineTo(x, y);
+    return p.detach();
+  }
+  if (tool === 'shape') {
+    const [a, b] = [points[0], points[points.length - 1]];
+    return buildPath(shapePoints(shapeKind, a[0], a[1], b[0], b[1], sizes.pen), 'shape', sizes.pen, false);
+  }
+  if (tool === 'pen' || tool === 'highlighter') return buildPath(points, tool, sizes[tool], stylus);
+  return EMPTY_PATH;
+}
+
+/** Strokes never change once drawn, so skip re-rendering them when other parts of the page update. */
+const StrokeView = memo(function StrokeView({ s, dim }: { s: Stroke; dim?: boolean }) {
+  const k = dim ? 0.2 : 1; // dimmed: written after the moment the recording is playing
+  if (s.tool === 'pen') return <Path path={strokePath(s)} color={s.color} opacity={k} />;
+  return <Path path={strokePath(s)} color={s.color} opacity={(s.tool === 'highlighter' ? 0.35 : 1) * k} style="stroke" strokeWidth={s.size} strokeCap="round" strokeJoin="round" />;
+});
+
+function PageImageView({ im }: { im: Page['images'][number] }) {
+  const sk = skImageFor(im);
+  return sk ? <SkiaImage image={sk} x={im.x} y={im.y} width={im.w} height={im.h} fit="fill" /> : null;
+}
+
+/** Position + font size of a text block, through an optional live move/resize transform. */
+function textStyle(t: Page['texts'][number], tt: Transform, color: string) {
+  return {
+    left: mapX(tt, t.x),
+    top: mapY(tt, t.y),
+    width: t.width * tt.s,
+    fontSize: (t.size ?? TEXT_SIZE) * tt.s,
+    lineHeight: textLineHeight(t) * tt.s,
+    color: t.color ?? color,
+  };
+}
+
+/** Delay (ms) before an annotation should start animating, or null if it's old and should just appear. */
+function useAppearDelay(a: Annotation) {
+  const [delay] = useState(() => {
+    const age = nowMs() - a.createdAt;
+    return age > 5000 ? null : Math.max(0, -age);
+  });
+  return delay;
+}
+
+/** AI ink that "draws itself" in with a stroke-trim animation. */
+function AnnotationStroke({ a }: { a: Annotation }) {
+  const path = useMemo(() => annotationPath(a), [a]);
+  const delay = useAppearDelay(a);
+  const end = useSharedValue(delay === null ? 1 : 0);
+  useEffect(() => {
+    if (delay !== null) end.set(withDelay(delay, withTiming(1, { duration: 700 })));
+  }, [delay, end]);
+  const fade = useDerivedValue(() => end.get() * 0.28);
+  if (!path) return null;
+  // Highlights fade in as a translucent fill; everything else "draws itself" with a stroke trim.
+  if (a.kind === 'highlight') return <Path path={path} color={a.color} opacity={fade} />;
+  return <Path path={path} color={a.color} style="stroke" strokeWidth={3.5 * (a.scale ?? 1)} strokeCap="round" strokeJoin="round" end={end} />;
+}
+
+const NOTE_SIZE = 26;
+const NOTE_MAX_WIDTH = 280;
+
+/** AI margin note in a handwriting font. Movable/resizable like everything else (scale grows the font). */
+function AiNote({ a, tt, selected, onMeasure }: { a: Annotation; tt: Transform; selected: boolean; onMeasure: (w: number, h: number) => void }) {
+  const styles = useStyles();
+  const delay = useAppearDelay(a);
+  const k = (a.scale ?? 1) * tt.s;
+  return (
+    <Animated.Text
+      entering={delay === null ? undefined : FadeIn.delay(delay).duration(600)}
+      onLayout={(e) => onMeasure(e.nativeEvent.layout.width / tt.s, e.nativeEvent.layout.height / tt.s)}
+      style={[
+        styles.note,
+        { left: mapX(tt, a.rect.x), top: mapY(tt, a.rect.y), maxWidth: NOTE_MAX_WIDTH * k, fontSize: NOTE_SIZE * k, lineHeight: (NOTE_SIZE + 2) * k, color: a.color },
+        selected && styles.textSelected,
+      ]}
+    >
+      {a.text}
+    </Animated.Text>
+  );
+}
+
+const useStyles = makeStyles((C) => ({
+  root: { flex: 1, overflow: 'hidden' },
+  // Overlays share the canvas transform; origin top-left so page (0,0) maps like the Skia group.
+  layer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, transformOrigin: 'left top' },
+  textBlock: {
+    position: 'absolute',
+    paddingHorizontal: 4,
+    paddingVertical: 0,
+  },
+  textSelected: { backgroundColor: 'rgba(47,111,235,0.10)', borderRadius: 4 },
+  note: { position: 'absolute', fontFamily: 'Caveat_600SemiBold' },
+  math: { position: 'absolute', paddingHorizontal: 4, borderRadius: 4 },
+  addPage: { position: 'absolute', width: 140, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)', borderStyle: 'dashed' },
+  addPageText: { fontSize: 14, fontWeight: '600', color: C.muted },
+}));

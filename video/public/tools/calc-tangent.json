@@ -1,0 +1,12 @@
+{
+  "title": "Tangent Line Explorer",
+  "prompt": "an interactive graph where I drag a point along the curve and see the tangent line and its slope, with a few functions to pick from",
+  "secs": 18.626,
+  "usage": {
+    "provider": "claude",
+    "model": "claude-sonnet-5-5",
+    "inputTokens": 1458,
+    "outputTokens": 3284,
+    "costUsd": 0.035756
+  }
+}

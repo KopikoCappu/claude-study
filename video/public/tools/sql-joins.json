@@ -1,0 +1,12 @@
+{
+  "title": "SQL Joins Practice",
+  "prompt": "give me practice problems on joins with a little database I can query",
+  "secs": 31.341,
+  "usage": {
+    "provider": "claude",
+    "model": "claude-sonnet-5-5",
+    "inputTokens": 1440,
+    "outputTokens": 5212,
+    "costUsd": 0.055
+  }
+}

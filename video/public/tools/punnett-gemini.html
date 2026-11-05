@@ -1,0 +1,856 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Punnett Square Practice</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f7f7f8;
+      color: #1c1c1e;
+      line-height: 1.45;
+      padding: 14px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 580px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid #e5e5ea;
+      padding-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1c1c1e;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #636366;
+      margin-top: 2px;
+    }
+
+    .stats-bar {
+      display: flex;
+      gap: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #ffffff;
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid #e5e5ea;
+      align-self: flex-start;
+    }
+
+    .stat-item {
+      color: #48484a;
+    }
+
+    .stat-val {
+      color: #2c59d9;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      border: 1px solid #e5e5ea;
+    }
+
+    .trait-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #2c59d9;
+      background: #eef2ff;
+      padding: 3px 8px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+
+    .cross-prompt {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #1c1c1e;
+    }
+
+    .cross-detail {
+      font-size: 0.85rem;
+      color: #636366;
+      margin-bottom: 14px;
+    }
+
+    /* Grid Layout for Punnett Square */
+    .square-container {
+      display: flex;
+      justify-content: center;
+      margin: 10px 0 16px;
+    }
+
+    .punnett-table {
+      display: grid;
+      grid-template-columns: 46px 86px 86px;
+      grid-template-rows: 46px 86px 86px;
+      gap: 6px;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .p-cell {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      font-family: inherit;
+      position: relative;
+    }
+
+    .p-corner {
+      font-size: 0.72rem;
+      color: #8e8e93;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    .p-gamete {
+      background: #f2f2f7;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #1c1c1e;
+      border: 1px dashed #c7c7cc;
+    }
+
+    .p-inner {
+      background: #ffffff;
+      border: 2px solid #d1d1d6;
+      font-size: 1.3rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      color: #1c1c1e;
+    }
+
+    .p-inner:hover:not(:disabled) {
+      border-color: #2c59d9;
+      background-color: #f8faff;
+    }
+
+    .p-inner.active {
+      border-color: #2c59d9;
+      box-shadow: 0 0 0 3px rgba(44, 89, 217, 0.2);
+      background-color: #f0f4ff;
+    }
+
+    .p-inner.correct {
+      border-color: #34c759;
+      background: #f0fdf4;
+      color: #1b6a32;
+    }
+
+    .p-inner.incorrect {
+      border-color: #ff3b30;
+      background: #fdf2f2;
+      color: #c92a2a;
+    }
+
+    /* Allele selector keypad */
+    .picker-box {
+      background: #f9f9fb;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .picker-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #636366;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .allele-buttons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .btn-allele {
+      background: #ffffff;
+      border: 1.5px solid #d1d1d6;
+      border-radius: 8px;
+      padding: 8px 4px;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #1c1c1e;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .btn-allele:active {
+      background: #e5e5ea;
+    }
+
+    /* Ratio prediction sections */
+    .prediction-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #1c1c1e;
+      margin-bottom: 6px;
+      margin-top: 14px;
+    }
+
+    .ratio-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .ratio-group {
+      background: #f9f9fb;
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ratio-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.85rem;
+    }
+
+    .ratio-row label {
+      font-weight: 500;
+      color: #3a3a3c;
+    }
+
+    .ratio-select {
+      background: #ffffff;
+      border: 1px solid #c7c7cc;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 4px 6px;
+      width: 60px;
+      color: #1c1c1e;
+      text-align: center;
+    }
+
+    .ratio-select.correct {
+      border-color: #34c759;
+      background: #f0fdf4;
+      color: #1b6a32;
+    }
+
+    .ratio-select.incorrect {
+      border-color: #ff3b30;
+      background: #fdf2f2;
+      color: #c92a2a;
+    }
+
+    /* Actions and Feedback */
+    .action-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s, transform 0.05s;
+      text-align: center;
+    }
+
+    .btn:active {
+      transform: scale(0.99);
+    }
+
+    .btn-primary {
+      background: #2c59d9;
+      color: #ffffff;
+    }
+
+    .btn-secondary {
+      background: #e5e5ea;
+      color: #1c1c1e;
+    }
+
+    .feedback-box {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      display: none;
+    }
+
+    .feedback-box.show {
+      display: block;
+    }
+
+    .feedback-success {
+      background: #eafaf1;
+      border: 1px solid #b7ebc9;
+      color: #135327;
+    }
+
+    .feedback-error {
+      background: #fef0f0;
+      border: 1px solid #fed2d2;
+      color: #8c1d1d;
+    }
+
+    .feedback-expl {
+      margin-top: 6px;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      color: #3a3a3c;
+    }
+
+    /* Summary pill info */
+    .glossary-chip {
+      font-size: 0.75rem;
+      background: #ffffff;
+      border: 1px solid #e5e5ea;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: #636366;
+      line-height: 1.35;
+    }
+    .glossary-chip strong {
+      color: #1c1c1e;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div>
+      <h1>Punnett Square Lab</h1>
+      <div class="subtitle">Complete the 2×2 cross & predict offspring ratios</div>
+    </div>
+    <div class="stats-bar">
+      <div class="stat-item">Streak: <span id="streak-val" class="stat-val">0</span></div>
+      <div class="stat-item">Score: <span id="score-val" class="stat-val">0/0</span></div>
+    </div>
+  </header>
+
+  <div class="card">
+    <span class="trait-badge" id="trait-badge">Brown / Blue Eyes</span>
+    <div class="cross-prompt" id="cross-prompt">Parent Cross: Bb × Bb</div>
+    <div class="cross-detail" id="cross-detail">Heterozygous brown × Heterozygous brown</div>
+
+    <!-- 2x2 Punnett Square -->
+    <div class="square-container">
+      <div class="punnett-table">
+        <!-- Row 0 (Top headers) -->
+        <div class="p-cell p-corner">♀ \ ♂</div>
+        <div class="p-cell p-gamete" id="gamete-top-0">-</div>
+        <div class="p-cell p-gamete" id="gamete-top-1">-</div>
+
+        <!-- Row 1 -->
+        <div class="p-cell p-gamete" id="gamete-side-0">-</div>
+        <button class="p-cell p-inner" id="cell-0" onclick="selectCell(0)">?</button>
+        <button class="p-cell p-inner" id="cell-1" onclick="selectCell(1)">?</button>
+
+        <!-- Row 2 -->
+        <div class="p-cell p-gamete" id="gamete-side-1">-</div>
+        <button class="p-cell p-inner" id="cell-2" onclick="selectCell(2)">?</button>
+        <button class="p-cell p-inner" id="cell-3" onclick="selectCell(3)">?</button>
+      </div>
+    </div>
+
+    <!-- Quick genotype keyboard for selected square cell -->
+    <div class="picker-box" id="picker-container">
+      <div class="picker-title">
+        <span id="picker-label">Tap a cell above to fill:</span>
+        <span style="font-weight: normal; color: #8e8e93;">Dominant allele first</span>
+      </div>
+      <div class="allele-buttons" id="allele-keypad">
+        <!-- Populated via JS based on current alleles -->
+      </div>
+    </div>
+
+    <!-- Ratio Predictions -->
+    <div class="prediction-title">Predict Offspring Proportions (out of 4)</div>
+    <div class="ratio-grid">
+      <!-- Genotypes -->
+      <div class="ratio-group">
+        <div style="font-size: 0.75rem; font-weight: 700; color:#636366; text-transform:uppercase;">Genotype counts</div>
+        <div class="ratio-row">
+          <label id="lbl-homo-dom">BB</label>
+          <select id="sel-homo-dom" class="ratio-select">
+            <option value="">-</option>
+            <option value="0">0</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+        <div class="ratio-row">
+          <label id="lbl-hetero">Bb</label>
+          <select id="sel-hetero" class="ratio-select">
+            <option value="">-</option>
+            <option value="0">0</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+        <div class="ratio-row">
+          <label id="lbl-homo-rec">bb</label>
+          <select id="sel-homo-rec" class="ratio-select">
+            <option value="">-</option>
+            <option value="0">0</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Phenotypes -->
+      <div class="ratio-group">
+        <div style="font-size: 0.75rem; font-weight: 700; color:#636366; text-transform:uppercase;">Phenotype % / count</div>
+        <div class="ratio-row">
+          <label id="lbl-dom-pheno" style="font-size:0.8rem;">Brown</label>
+          <select id="sel-dom-pheno" class="ratio-select" style="width:72px;">
+            <option value="">-</option>
+            <option value="0">0% (0)</option>
+            <option value="25">25% (1)</option>
+            <option value="50">50% (2)</option>
+            <option value="75">75% (3)</option>
+            <option value="100">100% (4)</option>
+          </select>
+        </div>
+        <div class="ratio-row">
+          <label id="lbl-rec-pheno" style="font-size:0.8rem;">Blue</label>
+          <select id="sel-rec-pheno" class="ratio-select" style="width:72px;">
+            <option value="">-</option>
+            <option value="0">0% (0)</option>
+            <option value="25">25% (1)</option>
+            <option value="50">50% (2)</option>
+            <option value="75">75% (3)</option>
+            <option value="100">100% (4)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-row">
+      <button class="btn btn-primary" id="btn-check" onclick="checkAnswers()">Check Cross</button>
+      <button class="btn btn-secondary" id="btn-next" onclick="nextCross()" style="display: none;">Next Cross →</button>
+    </div>
+
+    <!-- Feedback Banner -->
+    <div class="feedback-box" id="feedback-box">
+      <div id="feedback-headline" style="font-weight: 700;"></div>
+      <div class="feedback-expl" id="feedback-text"></div>
+    </div>
+  </div>
+
+  <!-- Note Reference Card -->
+  <div class="glossary-chip">
+    <strong>From your notes:</strong> Dominant allele uses capital letter (e.g. <em>B</em> = brown), recessive uses lowercase (<em>b</em> = blue). Heterozygous = <em>Bb</em>, homozygous = <em>BB</em> or <em>bb</em>. Standard monohybrid <em>Bb × Bb</em> produces 1 <em>BB</em> : 2 <em>Bb</em> : 1 <em>bb</em> and 75% brown : 25% blue.
+  </div>
+</div>
+
+<script>
+  // Trait configurations grounded in the notes and standard Mendelian crosses
+  const TRAITS = [
+    {
+      name: "Eye Color (Notes)",
+      domLetter: "B",
+      recLetter: "b",
+      domName: "Brown",
+      recName: "Blue"
+    },
+    {
+      name: "Pea Shape",
+      domLetter: "R",
+      recLetter: "r",
+      domName: "Round",
+      recName: "Wrinkled"
+    },
+    {
+      name: "Flower Color",
+      domLetter: "P",
+      recLetter: "p",
+      domName: "Purple",
+      recName: "White"
+    },
+    {
+      name: "Plant Height",
+      domLetter: "T",
+      recLetter: "t",
+      domName: "Tall",
+      recName: "Short"
+    }
+  ];
+
+  let streak = 0;
+  let totalSolved = 0;
+  let totalAttempts = 0;
+
+  let currentCross = null;
+  let selectedCellIndex = 0;
+  let cellValues = ["", "", "", ""];
+  let isChecked = false;
+
+  function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function getGenotypeLabel(p, domLetter, recLetter) {
+    if (p === domLetter + domLetter) return "Homozygous dominant";
+    if (p === recLetter + recLetter) return "Homozygous recessive";
+    return "Heterozygous";
+  }
+
+  function normalizeGenotype(a, b) {
+    // Dominant letter first
+    if (a.toLowerCase() === b.toLowerCase()) {
+      return (a === a.toUpperCase()) ? (a + b) : (b + a);
+    }
+    return a + b;
+  }
+
+  function generateCross() {
+    // Level 1: Note example (Bb x Bb) first
+    // Then mix among other homozygous/heterozygous crosses
+    const trait = (totalAttempts === 0) ? TRAITS[0] : TRAITS[getRandomInt(0, TRAITS.length - 1)];
+    const D = trait.domLetter;
+    const r = trait.recLetter;
+
+    const possibleParents = [
+      D + D, // homozygous dom
+      D + r, // heterozygous
+      r + r  // homozygous rec
+    ];
+
+    let p1, p2;
+    if (totalAttempts === 0) {
+      p1 = D + r;
+      p2 = D + r;
+    } else {
+      // Pick random pairing
+      p1 = possibleParents[getRandomInt(0, 2)];
+      p2 = possibleParents[getRandomInt(0, 2)];
+    }
+
+    const gametesTop = [p1[0], p1[1]];
+    const gametesSide = [p2[0], p2[1]];
+
+    const expectedCells = [
+      normalizeGenotype(gametesSide[0], gametesTop[0]),
+      normalizeGenotype(gametesSide[0], gametesTop[1]),
+      normalizeGenotype(gametesSide[1], gametesTop[0]),
+      normalizeGenotype(gametesSide[1], gametesTop[1])
+    ];
+
+    // Compute expected ratios
+    let countDomDom = 0;
+    let countHetero = 0;
+    let countRecRec = 0;
+
+    expectedCells.forEach(g => {
+      if (g === D + D) countDomDom++;
+      else if (g === D + r) countHetero++;
+      else if (g === r + r) countRecRec++;
+    });
+
+    const countDomPheno = countDomDom + countHetero;
+    const countRecPheno = countRecRec;
+
+    const pctDom = (countDomPheno / 4) * 100;
+    const pctRec = (countRecPheno / 4) * 100;
+
+    return {
+      trait,
+      p1,
+      p2,
+      gametesTop,
+      gametesSide,
+      expectedCells,
+      expectedGenotypes: {
+        homoDom: countDomDom,
+        hetero: countHetero,
+        homoRec: countRecRec
+      },
+      expectedPhenotypes: {
+        domPct: pctDom,
+        recPct: pctRec
+      }
+    };
+  }
+
+  function setupUI() {
+    currentCross = generateCross();
+    cellValues = ["", "", "", ""];
+    selectedCellIndex = 0;
+    isChecked = false;
+
+    // Reset feedback and buttons
+    document.getElementById("feedback-box").className = "feedback-box";
+    document.getElementById("btn-check").style.display = "block";
+    document.getElementById("btn-next").style.display = "none";
+
+    const T = currentCross.trait;
+    const D = T.domLetter;
+    const r = T.recLetter;
+
+    // Headings
+    document.getElementById("trait-badge").textContent = `${T.name}: ${T.domName} (${D}) vs ${T.recName} (${r})`;
+    document.getElementById("cross-prompt").textContent = `Cross: ${currentCross.p1} × ${currentCross.p2}`;
+    
+    const descP1 = getGenotypeLabel(currentCross.p1, D, r);
+    const descP2 = getGenotypeLabel(currentCross.p2, D, r);
+    document.getElementById("cross-detail").textContent = `${descP1} × ${descP2}`;
+
+    // Gametes on headers
+    document.getElementById("gamete-top-0").textContent = currentCross.gametesTop[0];
+    document.getElementById("gamete-top-1").textContent = currentCross.gametesTop[1];
+    document.getElementById("gamete-side-0").textContent = currentCross.gametesSide[0];
+    document.getElementById("gamete-side-1").textContent = currentCross.gametesSide[1];
+
+    // Reset square cells
+    for (let i = 0; i < 4; i++) {
+      const cell = document.getElementById(`cell-${i}`);
+      cell.textContent = "?";
+      cell.className = "p-cell p-inner";
+      cell.disabled = false;
+    }
+    highlightCell(0);
+
+    // Build Keypad with 4 choices: DD, Dr, rr, Clear
+    const keypad = document.getElementById("allele-keypad");
+    keypad.innerHTML = "";
+    const options = [D + D, D + r, r + r, "Clear"];
+    options.forEach(opt => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-allele";
+      btn.textContent = opt === "Clear" ? "⌫" : opt;
+      btn.style.color = (opt === "Clear") ? "#8e8e93" : "#1c1c1e";
+      btn.onclick = () => fillCurrentCell(opt === "Clear" ? "" : opt);
+      keypad.appendChild(btn);
+    });
+
+    // Reset ratio labels & selects
+    document.getElementById("lbl-homo-dom").textContent = `${D}${D} (homo dom)`;
+    document.getElementById("lbl-hetero").textContent = `${D}${r} (hetero)`;
+    document.getElementById("lbl-homo-rec").textContent = `${r}${r} (homo rec)`;
+
+    document.getElementById("lbl-dom-pheno").textContent = `${T.domName} (${D}_)`;
+    document.getElementById("lbl-rec-pheno").textContent = `${T.recName} (${r}${r})`;
+
+    ["sel-homo-dom", "sel-hetero", "sel-homo-rec", "sel-dom-pheno", "sel-rec-pheno"].forEach(id => {
+      const el = document.getElementById(id);
+      el.value = "";
+      el.className = "ratio-select";
+      el.disabled = false;
+    });
+  }
+
+  function selectCell(idx) {
+    if (isChecked) return;
+    highlightCell(idx);
+  }
+
+  function highlightCell(idx) {
+    selectedCellIndex = idx;
+    for (let i = 0; i < 4; i++) {
+      const cell = document.getElementById(`cell-${i}`);
+      cell.classList.remove("active");
+    }
+    document.getElementById(`cell-${idx}`).classList.add("active");
+    document.getElementById("picker-label").textContent = `Selected: Cell #${idx + 1}`;
+  }
+
+  function fillCurrentCell(val) {
+    if (isChecked) return;
+    cellValues[selectedCellIndex] = val;
+    const btn = document.getElementById(`cell-${selectedCellIndex}`);
+    btn.textContent = val || "?";
+
+    // Auto advance to next unfilled cell
+    for (let step = 1; step <= 4; step++) {
+      const nextIdx = (selectedCellIndex + step) % 4;
+      if (!cellValues[nextIdx]) {
+        highlightCell(nextIdx);
+        return;
+      }
+    }
+  }
+
+  function checkAnswers() {
+    if (isChecked) return;
+
+    // Check if everything is filled
+    const anyCellEmpty = cellValues.some(v => !v);
+    const selHomoDom = document.getElementById("sel-homo-dom").value;
+    const selHetero = document.getElementById("sel-hetero").value;
+    const selHomoRec = document.getElementById("sel-homo-rec").value;
+    const selDomPheno = document.getElementById("sel-dom-pheno").value;
+    const selRecPheno = document.getElementById("sel-rec-pheno").value;
+
+    if (anyCellEmpty || selHomoDom === "" || selHetero === "" || selHomoRec === "" || selDomPheno === "" || selRecPheno === "") {
+      const fb = document.getElementById("feedback-box");
+      fb.className = "feedback-box feedback-error show";
+      document.getElementById("feedback-headline").textContent = "Incomplete Cross";
+      document.getElementById("feedback-text").textContent = "Please fill in all 4 Punnett square squares and select all ratio predictions before checking.";
+      return;
+    }
+
+    isChecked = true;
+    totalAttempts++;
+
+    let squareCorrect = true;
+    for (let i = 0; i < 4; i++) {
+      const cell = document.getElementById(`cell-${i}`);
+      cell.classList.remove("active");
+      const expected = currentCross.expectedCells[i];
+      if (cellValues[i] === expected) {
+        cell.classList.add("correct");
+      } else {
+        cell.classList.add("incorrect");
+        squareCorrect = false;
+      }
+    }
+
+    // Check ratios
+    let ratiosCorrect = true;
+
+    function evaluateSelect(id, expectedVal) {
+      const el = document.getElementById(id);
+      if (parseInt(el.value, 10) === expectedVal) {
+        el.classList.add("correct");
+        return true;
+      } else {
+        el.classList.add("incorrect");
+        return false;
+      }
+    }
+
+    const c1 = evaluateSelect("sel-homo-dom", currentCross.expectedGenotypes.homoDom);
+    const c2 = evaluateSelect("sel-hetero", currentCross.expectedGenotypes.hetero);
+    const c3 = evaluateSelect("sel-homo-rec", currentCross.expectedGenotypes.homoRec);
+    const c4 = evaluateSelect("sel-dom-pheno", currentCross.expectedPhenotypes.domPct);
+    const c5 = evaluateSelect("sel-rec-pheno", currentCross.expectedPhenotypes.recPct);
+
+    if (!c1 || !c2 || !c3 || !c4 || !c5) {
+      ratiosCorrect = false;
+    }
+
+    const allCorrect = squareCorrect && ratiosCorrect;
+
+    if (allCorrect) {
+      streak++;
+      totalSolved++;
+      document.getElementById("streak-val").textContent = streak;
+      document.getElementById("score-val").textContent = `${totalSolved}/${totalAttempts}`;
+
+      const fb = document.getElementById("feedback-box");
+      fb.className = "feedback-box feedback-success show";
+      document.getElementById("feedback-headline").textContent = "Well done! 100% Correct";
+      document.getElementById("feedback-text").textContent =
+        `Genotypes: ${currentCross.expectedGenotypes.homoDom} ${currentCross.trait.domLetter}${currentCross.trait.domLetter} : ` +
+        `${currentCross.expectedGenotypes.hetero} ${currentCross.trait.domLetter}${currentCross.trait.recLetter} : ` +
+        `${currentCross.expectedGenotypes.homoRec} ${currentCross.trait.recLetter}${currentCross.trait.recLetter}. ` +
+        `Phenotype ratio: ${currentCross.expectedPhenotypes.domPct}% ${currentCross.trait.domName} vs ${currentCross.expectedPhenotypes.recPct}% ${currentCross.trait.recName}.`;
+    } else {
+      streak = 0;
+      document.getElementById("streak-val").textContent = streak;
+      document.getElementById("score-val").textContent = `${totalSolved}/${totalAttempts}`;
+
+      const fb = document.getElementById("feedback-box");
+      fb.className = "feedback-box feedback-error show";
+      document.getElementById("feedback-headline").textContent = "Review Needed";
+
+      let explanation = "";
+      if (!squareCorrect) {
+        explanation += "Check gamete intersections: combine one allele from the top column and one from the left row. ";
+      }
+      if (!ratiosCorrect) {
+        const expG = currentCross.expectedGenotypes;
+        const expP = currentCross.expectedPhenotypes;
+        const D = currentCross.trait.domLetter;
+        const r = currentCross.trait.recLetter;
+        explanation += `For ${currentCross.p1} × ${currentCross.p2}, expected genotypes are: ${expG.homoDom} ${D}${D}, ${expG.hetero} ${D}${r}, ${expG.homoRec} ${r}${r}. ` +
+                       `Phenotypes: ${expP.domPct}% dominant (${currentCross.trait.domName}) and ${expP.recPct}% recessive (${currentCross.trait.recName}).`;
+      }
+      document.getElementById("feedback-text").textContent = explanation;
+    }
+
+    // Toggle Buttons
+    document.getElementById("btn-check").style.display = "none";
+    document.getElementById("btn-next").style.display = "block";
+  }
+
+  function nextCross() {
+    setupUI();
+  }
+
+  // Keyboard navigation for power users (1-4 keys to select allele, arrows to move)
+  window.addEventListener("keydown", (e) => {
+    if (isChecked) return;
+    if (e.key === "ArrowRight") {
+      selectCell((selectedCellIndex + 1) % 4);
+    } else if (e.key === "ArrowLeft") {
+      selectCell((selectedCellIndex + 3) % 4);
+    } else if (e.key === "ArrowDown") {
+      selectCell((selectedCellIndex + 2) % 4);
+    } else if (e.key === "ArrowUp") {
+      selectCell((selectedCellIndex + 2) % 4);
+    }
+  });
+
+  // Init
+  setupUI();
+</script>
+</body>
+</html>

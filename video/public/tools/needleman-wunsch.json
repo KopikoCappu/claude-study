@@ -1,0 +1,12 @@
+{
+  "title": "Needleman-Wunsch Grid Practice",
+  "prompt": "let me practice filling in the scoring grid",
+  "secs": 17.451,
+  "usage": {
+    "provider": "claude",
+    "model": "claude-sonnet-5-5",
+    "inputTokens": 1495,
+    "outputTokens": 2694,
+    "costUsd": 0.02993
+  }
+}

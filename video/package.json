@@ -1,0 +1,26 @@
+{
+  "name": "inkbuddy-video",
+  "private": true,
+  "scripts": {
+    "render:study": "remotion render ClaudeStudy out/claude-study.mp4",
+    "render:study-clean": "remotion render ClaudeStudyClean out/claude-study-clean.mp4",
+    "studio": "remotion studio",
+    "render": "remotion render InkBuddyDemo out/inkbuddy-demo.mp4",
+    "still": "remotion still InkBuddyDemo out/still.png",
+    "render:tools": "remotion render StudyTools out/inkbuddy-study-tools.mp4",
+    "render:tools-bio": "remotion render StudyToolsBio out/inkbuddy-study-tools-bio.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.536",
+    "@remotion/google-fonts": "^4.0.536",
+    "@remotion/paths": "^4.0.536",
+    "@remotion/transitions": "^4.0.536",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "remotion": "^4.0.536"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}

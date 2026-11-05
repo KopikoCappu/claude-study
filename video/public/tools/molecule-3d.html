@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VSEPR 3D Molecules</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;font-family:-apple-system,Roboto,"Segoe UI",sans-serif;color:#1C1C1E;background:#fafafa}
+#app{display:flex;flex-direction:column;height:100%;max-width:100%}
+h1{font-size:18px;margin:10px 12px 0}
+.hint{font-size:13px;color:#555;margin:2px 12px 6px}
+.tabs{display:flex;gap:8px;padding:0 12px;flex-wrap:wrap}
+button{font:inherit;border:1px solid #d0d0d5;background:#fff;border-radius:10px;padding:10px 14px;min-height:44px;cursor:pointer;color:#1C1C1E}
+button.on{background:#0a6cff;border-color:#0a6cff;color:#fff}
+#view{flex:1;min-height:200px;position:relative;margin:8px 12px;border-radius:14px;background:#fff;border:1px solid #e4e4e8;overflow:hidden}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#labels{position:absolute;inset:0;pointer-events:none}
+.lb{position:absolute;transform:translate(-50%,-50%);font-size:13px;font-weight:600;background:rgba(255,255,255,.9);border:1px solid #0a6cff;color:#0a6cff;border-radius:8px;padding:2px 6px;white-space:nowrap}
+.at{position:absolute;transform:translate(-50%,-50%);font-size:12px;font-weight:700;color:#fff}
+#info{padding:0 12px 12px;font-size:14px;line-height:1.4}
+#info b{color:#0a6cff}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.row button{padding:6px 12px;min-height:38px;font-size:13px}
+</style>
+</head>
+<body>
+<div id="app">
+<h1>VSEPR Molecule Viewer</h1>
+<div class="hint">Drag to rotate, pinch or scroll to zoom. Pick a molecule below.</div>
+<div class="tabs" id="tabs"></div>
+<div id="view"><div id="labels"></div></div>
+<div id="info"></div>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const rad=d=>d*Math.PI/180;
+// build H directions: half-angle a between the two H's in plane etc.
+function dirsFromAngle(n,ang){
+  // n bonds symmetric around -y axis-ish; compute with cone half-angle theta
+  // for 3 bonds around axis: angle between bonds A satisfies cosA = 1.5*cos^2(t)... derive: cosA = cos^2t + sin^2t*cos120
+  const out=[];
+  if(n===4){const v=[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]];return v.map(a=>new THREE.Vector3(...a).normalize());}
+  if(n===3){
+    // cosA = cos^2t - 0.5 sin^2t => cos^2t=(cosA+.5)/1.5
+    const c2=(Math.cos(rad(ang))+.5)/1.5,t=Math.acos(-Math.sqrt(c2)); // pointing down
+    for(let i=0;i<3;i++){const p=rad(120*i);out.push(new THREE.Vector3(Math.sin(t)*Math.cos(p),Math.cos(t),Math.sin(t)*Math.sin(p)));}
+    return out;
+  }
+  const h=rad(ang/2);
+  return [new THREE.Vector3(Math.sin(h),-Math.cos(h),0),new THREE.Vector3(-Math.sin(h),-Math.cos(h),0)];
+}
+const mols=[
+ {f:'CH4',c:'C',n:4,lp:0,ang:109.5,name:'Methane',shape:'Tetrahedral',note:'4 bonding pairs, no lone pairs: all H–C–H angles equal 109.5°.'},
+ {f:'NH3',c:'N',n:3,lp:1,ang:107,name:'Ammonia',shape:'Trigonal pyramidal',note:'3 bonding pairs + 1 lone pair. The lone pair repels more strongly, squeezing H–N–H to ~107°.'},
+ {f:'H2O',c:'O',n:2,lp:2,ang:104.5,name:'Water',shape:'Bent',note:'2 bonding pairs + 2 lone pairs. Two lone pairs push the bonds closer: ~104.5°.'}
+];
+const view=document.getElementById('view'),lab=document.getElementById('labels');
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+view.insertBefore(renderer.domElement,lab);
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(40,1,.1,100);cam.position.set(3.2,2.2,4.2);
+const ctl=new OrbitControls(cam,renderer.domElement);ctl.enableDamping=true;ctl.enablePan=false;ctl.minDistance=3;ctl.maxDistance=9;
+scene.add(new THREE.AmbientLight(0xffffff,.8));
+const dl=new THREE.DirectionalLight(0xffffff,1.2);dl.position.set(3,5,4);scene.add(dl);
+const grp=new THREE.Group();scene.add(grp);
+let cur=null,lbls=[];
+const L=1.5;
+function sphere(r,col,pos){const m=new THREE.Mesh(new THREE.SphereGeometry(r,32,24),new THREE.MeshStandardMaterial({color:col,roughness:.4}));m.position.copy(pos);grp.add(m);return m;}
+function build(m){
+  grp.clear();lab.innerHTML='';lbls=[];
+  const cols={C:0x444448,N:0x3050f8,O:0xe03030};
+  const o=new THREE.Vector3();
+  sphere(.38,cols[m.c],o);
+  addTag(o,m.c);
+  const hd=dirsFromAngle(m.n,m.ang);
+  const hs=hd.map(d=>d.clone().multiplyScalar(L));
+  hs.forEach(p=>{
+    sphere(.24,0xdddddd,p);addTag(p,'H',true);
+    const len=p.length(),cyl=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,len,12),new THREE.MeshStandardMaterial({color:0x999999}));
+    cyl.position.copy(p).multiplyScalar(.5);cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),p.clone().normalize());grp.add(cyl);
+  });
+  // lone pairs: opposite side
+  const sum=new THREE.Vector3();hd.forEach(d=>sum.add(d));
+  let up=sum.lengthSq()<1e-6?new THREE.Vector3(0,1,0):sum.clone().negate().normalize();
+  if(m.lp){
+    const perp=new THREE.Vector3(0,0,1);
+    const ds=m.lp===1?[up]:[
+      up.clone().multiplyScalar(Math.cos(rad(55))).add(perp.clone().multiplyScalar(Math.sin(rad(55)))),
+      up.clone().multiplyScalar(Math.cos(rad(55))).add(perp.clone().multiplyScalar(-Math.sin(rad(55))))];
+    ds.forEach(d=>{
+      const p=d.clone().multiplyScalar(.95);
+      const lobe=new THREE.Mesh(new THREE.SphereGeometry(.34,24,16),new THREE.MeshStandardMaterial({color:0xffb020,transparent:true,opacity:.55}));
+      lobe.scale.set(.8,1.2,.8);lobe.position.copy(p);lobe.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d);grp.add(lobe);
+    });
+  }
+  // angle labels: show every pair (up to 6)
+  for(let i=0;i<hd.length;i++)for(let j=i+1;j<hd.length;j++){
+    const a=hd[i],b=hd[j];
+    const mid=a.clone().add(b).normalize();
+    const pos=mid.multiplyScalar(.95);
+    const ang=Math.acos(a.dot(b))*180/Math.PI;
+    const val=m.n===4?'109.5°':(m.n===3?'~107°':'~104.5°');
+    // arc
+    const pts=[];for(let k=0;k<=16;k++){const t=k/16;pts.push(a.clone().multiplyScalar(1-t).add(b.clone().multiplyScalar(t)).normalize().multiplyScalar(.75));}
+    grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x0a6cff})));
+    addLabel(pos.clone().multiplyScalar(1.12),val);
+  }
+  const n=m.n===4?6:m.n===3?3:1;
+  document.getElementById('info').innerHTML=`<b>${m.f}</b> — ${m.name}<br>Shape: <b>${m.shape}</b>, bond angle ${m.n===4?'':'~'}${m.ang}°<br>Lone pairs on ${m.c}: <b>${m.lp}</b>. ${m.note}<div class="row"><button id="lp">${lpOn?'Hide':'Show'} lone pairs: n/a</button></div>`;
+  document.querySelector('#lp').remove();
+}
+let lpOn=true;
+function addLabel(v,t){const e=document.createElement('div');e.className='lb';e.textContent=t;lab.appendChild(e);lbls.push({v,e});}
+function addTag(v,t,small){const e=document.createElement('div');e.className='at';e.textContent=t;e.style.color=t==='H'?'#333':'#fff';lab.appendChild(e);lbls.push({v:v.clone(),e});}
+const tabs=document.getElementById('tabs');
+mols.forEach((m,i)=>{const b=document.createElement('button');b.textContent=m.f;b.onclick=()=>{[...tabs.children].forEach(x=>x.classList.remove('on'));b.classList.add('on');cur=m;build(m);};tabs.appendChild(b);if(i===0)b.click();});
+function resize(){const w=view.clientWidth,h=view.clientHeight;renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();}
+new ResizeObserver(resize).observe(view);resize();
+const tmp=new THREE.Vector3();
+(function loop(){
+  requestAnimationFrame(loop);ctl.update();renderer.render(scene,cam);
+  const w=view.clientWidth,h=view.clientHeight;
+  lbls.forEach(({v,e})=>{tmp.copy(v).project(cam);e.style.left=((tmp.x+1)/2*w)+'px';e.style.top=((1-tmp.y)/2*h)+'px';e.style.zIndex=Math.round((1-tmp.z)*1000);});
+})();
+</script>
+</body>
+</html>

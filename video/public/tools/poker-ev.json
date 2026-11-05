@@ -1,0 +1,12 @@
+{
+  "title": "Pot Odds EV Quiz",
+  "prompt": "quiz me on whether calling is +EV using pot odds",
+  "secs": 22.55,
+  "usage": {
+    "provider": "claude",
+    "model": "claude-sonnet-5-5",
+    "inputTokens": 1435,
+    "outputTokens": 3473,
+    "costUsd": 0.0376
+  }
+}

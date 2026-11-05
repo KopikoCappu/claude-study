@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tangent Line Explorer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:-apple-system,Roboto,"Segoe UI",sans-serif;color:#1C1C1E;background:#fcfcfd;display:flex;flex-direction:column;padding:10px;gap:8px;max-width:900px;margin:0 auto}
+h1{font-size:18px;margin:0}
+.hint{font-size:13px;color:#555;margin:0}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+button{font:inherit;font-size:14px;min-height:40px;padding:0 12px;border:1px solid #d0d3d9;background:#fff;border-radius:10px;color:#1C1C1E}
+button.on{background:#2563eb;color:#fff;border-color:#2563eb}
+#wrap{flex:1;min-height:200px;position:relative;border:1px solid #e1e3e8;border-radius:12px;background:#fff;overflow:hidden}
+canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.info{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;font-size:14px}
+.info div{background:#f2f4f8;border-radius:10px;padding:6px 10px}
+b{font-variant-numeric:tabular-nums}
+label{font-size:13px;display:flex;align-items:center;gap:8px;flex:1;min-width:200px}
+input[type=range]{flex:1;min-height:32px}
+</style></head><body>
+<h1>Tangent Line Explorer</h1>
+<p class="hint">Drag the point along the curve. Use the h slider to see the secant approach the tangent.</p>
+<div class="row" id="fns"></div>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div class="info">
+<div>x = <b id="ix"></b></div>
+<div>f(x) = <b id="iy"></b></div>
+<div>f′(x) = <b id="id"></b></div>
+<div>secant slope = <b id="is"></b></div>
+</div>
+<div class="row">
+<label>h = <b id="hv" style="min-width:48px"></b><input id="h" type="range" min="0" max="100" value="100"></label>
+</div>
+<div class="hint" id="rule"></div>
+<script>
+const F=[
+{n:"x²",f:x=>x*x,d:x=>2*x,r:"f(x) = x² → f′(x) = 2x. At x=1 slope is 2; at x=−1 slope is −2."},
+{n:"x³",f:x=>x**3,d:x=>3*x*x,r:"f(x) = x³ → f′(x) = 3x². The slope is never negative."},
+{n:"sin x",f:Math.sin,d:Math.cos,r:"f(x) = sin x → f′(x) = cos x. Slope is 0 at peaks and valleys."},
+{n:"eˣ",f:Math.exp,d:Math.exp,r:"f(x) = eˣ → f′(x) = eˣ. Slope equals the height."},
+{n:"1/x",f:x=>1/x,d:x=>-1/(x*x),r:"f(x) = 1/x → f′(x) = −1/x². Slope is always negative (x ≠ 0)."},
+{n:"|x|",f:Math.abs,d:x=>x>0?1:x<0?-1:NaN,r:"f(x) = |x| has a corner at 0: no derivative there. Notice the secant slopes differ from each side."}
+];
+let cur=0,x0=1,cv=document.getElementById('c'),ctx=cv.getContext('2d'),W,H,dpr;
+const V={xmin:-4,xmax:4,ymin:-4,ymax:4};
+const fb=document.getElementById('fns');
+F.forEach((o,i)=>{const b=document.createElement('button');b.textContent=o.n;b.onclick=()=>{cur=i;x0=i==3?0:i==4?1:1;upd()};fb.appendChild(b)});
+const hs=document.getElementById('h');
+function hval(){const t=hs.value/100;return t==0?0:Math.max(0.001,Math.pow(t,2)*3)}
+function resize(){const r=cv.parentElement.getBoundingClientRect();dpr=devicePixelRatio||1;cv.width=r.width*dpr;cv.height=r.height*dpr;W=r.width;H=r.height;
+const a=W/H;V.ymin=-4;V.ymax=4;const w=8*a;V.xmin=-w/2;V.xmax=w/2;draw()}
+const sx=x=>(x-V.xmin)/(V.xmax-V.xmin)*W, sy=y=>H-(y-V.ymin)/(V.ymax-V.ymin)*H;
+const ix=px=>V.xmin+px/W*(V.xmax-V.xmin);
+function upd(){[...fb.children].forEach((b,i)=>b.classList.toggle('on',i==cur));
+document.getElementById('rule').textContent=F[cur].r;draw()}
+function draw(){if(!W)return;const o=F[cur];ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+ctx.strokeStyle="#eceef2";ctx.lineWidth=1;ctx.beginPath();
+for(let i=Math.ceil(V.xmin);i<=V.xmax;i++){ctx.moveTo(sx(i),0);ctx.lineTo(sx(i),H)}
+for(let j=-4;j<=4;j++){ctx.moveTo(0,sy(j));ctx.lineTo(W,sy(j))}ctx.stroke();
+ctx.strokeStyle="#888";ctx.beginPath();ctx.moveTo(0,sy(0));ctx.lineTo(W,sy(0));ctx.moveTo(sx(0),0);ctx.lineTo(sx(0),H);ctx.stroke();
+ctx.strokeStyle="#1C1C1E";ctx.lineWidth=2;ctx.beginPath();let pen=false,py=0;
+for(let p=0;p<=W;p+=1){const x=ix(p),y=o.f(x);if(!isFinite(y)||Math.abs(y)>50||(pen&&Math.abs(sy(y)-py)>H)){pen=false;continue}
+pen?ctx.lineTo(p,sy(y)):ctx.moveTo(p,sy(y));pen=true;py=sy(y)}ctx.stroke();
+if(cur==4&&Math.abs(x0)<0.05)x0=x0<0?-0.05:0.05;
+const y0=o.f(x0),m=o.d(x0),h=hval();
+const line=(m,x,y,col,dash)=>{ctx.strokeStyle=col;ctx.setLineDash(dash);ctx.lineWidth=2;ctx.beginPath();
+ctx.moveTo(0,sy(y+m*(V.xmin-x)));ctx.lineTo(W,sy(y+m*(V.xmax-x)));ctx.stroke();ctx.setLineDash([])};
+let sm=NaN;
+if(h>0){sm=(o.f(x0+h)-y0)/h;if(isFinite(sm)){line(sm,x0,y0,"#e08a00",[6,4]);
+ctx.fillStyle="#e08a00";ctx.beginPath();ctx.arc(sx(x0+h),sy(o.f(x0+h)),5,0,7);ctx.fill()}}
+if(isFinite(m))line(m,x0,y0,"#2563eb",[]);
+ctx.fillStyle="#2563eb";ctx.beginPath();ctx.arc(sx(x0),sy(y0),9,0,7);ctx.fill();
+ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.stroke();
+const f=v=>isFinite(v)?(+v.toFixed(3)).toString():"undefined";
+document.getElementById('ix').textContent=f(x0);
+document.getElementById('iy').textContent=f(y0);
+document.getElementById('id').textContent=f(m);
+document.getElementById('is').textContent=h>0?f(sm):"— (h→0)";
+document.getElementById('hv').textContent=h>0?h.toFixed(3):"→0"}
+hs.oninput=draw;
+let drag=false;
+function mv(e){const r=cv.getBoundingClientRect();let x=ix(e.clientX-r.left);
+x=Math.max(V.xmin+.1,Math.min(V.xmax-.1,x));
+if(cur==3)x=Math.min(x,Math.log(50));
+if(cur==4&&Math.abs(x)<.25)x=x<0?-.25:.25;
+x0=x;draw()}
+cv.onpointerdown=e=>{drag=true;cv.setPointerCapture(e.pointerId);mv(e)};
+cv.onpointermove=e=>{if(drag)mv(e)};
+cv.onpointerup=()=>drag=false;
+addEventListener('resize',resize);
+new ResizeObserver(resize).observe(document.getElementById('wrap'));
+upd();resize();
+</script></body></html>

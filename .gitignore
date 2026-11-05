@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.local
+.DS_Store
+
+# agent tooling (symlinked skill dirs break EAS packaging on Windows)
+server/.claude/
+
+.vercel
+
+# downloaded background options (not used by the video)
+video/public/bg/candidates/

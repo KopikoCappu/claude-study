@@ -1,0 +1,124 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pot Odds EV Quiz</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,Roboto,"Segoe UI",sans-serif;background:#fcfcfd;color:#1C1C1E;padding:14px;max-width:900px;margin:auto}
+h1{font-size:20px;margin:0 0 4px}
+.hint{font-size:13px;color:#666;margin:0 0 12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.stat{background:#f0f2f7;border-radius:10px;padding:8px 12px;font-size:13px}
+.card{background:#fff;border:1px solid #e3e5ea;border-radius:14px;padding:14px}
+.q{font-size:16px;line-height:1.5;margin:0 0 12px}
+.tag{display:inline-block;font-size:12px;background:#e8efff;color:#2455d6;border-radius:8px;padding:2px 8px;margin-bottom:8px}
+button{font:inherit;border:1px solid #cfd3dc;background:#fff;border-radius:12px;padding:12px 16px;min-height:48px;cursor:pointer;color:#1C1C1E}
+.opts{display:flex;gap:8px;flex-wrap:wrap}
+.opts button{flex:1 1 140px}
+button.pri{background:#2455d6;color:#fff;border-color:#2455d6}
+.ok{background:#e4f6e8!important;border-color:#2e9e4f!important}
+.bad{background:#fde8e8!important;border-color:#d33!important}
+input{font:inherit;padding:12px;border:1px solid #cfd3dc;border-radius:12px;width:110px;min-height:48px}
+.fb{margin-top:12px;font-size:14px;line-height:1.5;display:none;background:#f7f8fb;border-radius:10px;padding:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+</style></head><body>
+<h1>Pot Odds: Call or Fold?</h1>
+<p class="hint">Decide if the call is +EV. Difficulty rises as you get answers right.</p>
+<div class="bar">
+<div class="stat">Score: <b id="sc">0/0</b></div>
+<div class="stat">Streak: <b id="st">0</b></div>
+<div class="stat">Level: <b id="lv">1</b></div>
+</div>
+<div class="card">
+<span class="tag" id="tag"></span>
+<p class="q" id="q"></p>
+<div id="ans"></div>
+<div class="fb" id="fb"></div>
+<div style="margin-top:12px"><button class="pri" id="next" style="display:none">Next question</button></div>
+</div>
+<script>
+let score=0,total=0,streak=0,level=1,cur;
+const $=id=>document.getElementById(id);
+const ri=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+const pick=a=>a[ri(0,a.length-1)];
+const pct=x=>(x*100).toFixed(1)+"%";
+function gen(){
+  const kinds=level==1?[0,1]:level==2?[0,1,2]:[0,1,2,3];
+  const k=pick(kinds);
+  const pots=level==1?[40,60,80,100,120,200]:[35,45,70,90,130,150,175,240];
+  const pot=pick(pots);
+  const bets=level==1?[10,20,25,40,50]:[15,20,30,45,60,75];
+  const call=pick(bets);
+  const odds=call/(pot+call);
+  if(k==0){
+    // choose call/fold with equity given
+    let eq=Math.max(0.05,Math.min(0.7,odds+(Math.random()<.5?1:-1)*(level==1?ri(6,15):ri(2,6))/100));
+    eq=Math.round(eq*100)/100;
+    return{tag:"Equity given",text:`Pot (including opponent's bet) is $${pot}. You must call $${call}. Your equity is ${Math.round(eq*100)}%. Is calling +EV?`,
+     type:"cf",correct:eq>odds?"Call":"Fold",
+     exp:`Pot odds = ${call}/(${pot}+${call}) = ${pct(odds)}. Equity ${Math.round(eq*100)}% is ${eq>odds?"greater":"less"} than pot odds, so ${eq>odds?"call (+EV)":"fold (−EV)"}. Check: EV = ${eq}×${pot} − ${(1-eq).toFixed(2)}×${call} = $${(eq*pot-(1-eq)*call).toFixed(2)}.`};
+  }
+  if(k==1||k==2){
+    const draws=[["flush draw",9],["open-ended straight draw",8],["gutshot straight draw",4],["flush draw + open-ended straight draw",15]];
+    const d=level==1?pick(draws.slice(0,2)):pick(draws);
+    const street=k==1?"flop":"flop";
+    const mult=4; // flop, two cards to come
+    const eq=Math.min(d[1]*mult,100)/100;
+    // use turn in level 3 variant
+    const turn=level>=2&&k==2;
+    const m=turn?2:4;
+    const e=d[1]*m/100;
+    return{tag:"Rule of 2 and 4",text:`You hold a ${d[0]} (${d[1]} outs) on the ${turn?"turn (one card to come)":"flop (two cards to come, you will see both)"}. Pot is $${pot}, you must call $${call}. Using the rule of ${m}, is calling +EV?`,
+     type:"cf",correct:e>odds?"Call":"Fold",
+     exp:`Equity ≈ ${d[1]} × ${m} = ${Math.round(e*100)}%. Pot odds = ${call}/(${pot}+${call}) = ${pct(odds)}. ${Math.round(e*100)}% ${e>odds?">":"<"} ${pct(odds)}, so ${e>odds?"call":"fold"}.`};
+  }
+  if(k==3&&Math.random()<.5){
+    const eq=pick([0.2,0.25,0.3,0.35,0.4,0.45]);
+    const ev=eq*pot-(1-eq)*call;
+    return{tag:"Compute EV",text:`Pot is $${pot}, call is $${call}, equity ${Math.round(eq*100)}%. Using EV = equity×pot − (1−equity)×call, what is EV(call) in dollars? (2 decimals ok, round to nearest $0.01)`,
+     type:"num",correct:ev,
+     exp:`EV = ${eq}×${pot} − ${(1-eq).toFixed(2)}×${call} = ${(eq*pot).toFixed(2)} − ${((1-eq)*call).toFixed(2)} = $${ev.toFixed(2)}. ${ev>0?"Positive, so call.":"Negative, so fold."}`};
+  }
+  // required equity numeric
+  return{tag:"Pot odds",text:`Pot is $${pot} and you must call $${call}. What equity (in %) do you need to break even? Round to the nearest 1%.`,
+   type:"num",correct:odds*100,tol:1,
+   exp:`Pot odds = call/(pot+call) = ${call}/${pot+call} = ${pct(odds)}. You need more equity than this to call.`};
+}
+function show(){
+  cur=gen();
+  $("tag").textContent=cur.tag;$("q").textContent=cur.text;
+  $("fb").style.display="none";$("next").style.display="none";
+  const a=$("ans");a.innerHTML="";
+  if(cur.type=="cf"){
+    const o=document.createElement("div");o.className="opts";
+    ["Call","Fold"].forEach(t=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>check(t,b);o.appendChild(b)});
+    a.appendChild(o);
+  }else{
+    const r=document.createElement("div");r.className="row";
+    const i=document.createElement("input");i.type="text";i.inputMode="decimal";i.id="inp";i.placeholder=cur.tag=="Pot odds"?"%":"$";
+    const b=document.createElement("button");b.className="pri";b.textContent="Check";
+    b.onclick=()=>check(i.value,b);
+    i.onkeydown=e=>{if(e.key=="Enter")b.click()};
+    r.appendChild(i);r.appendChild(b);a.appendChild(r);
+  }
+}
+function check(v,btn){
+  let ok;
+  if(cur.type=="cf"){
+    ok=v==cur.correct;
+    document.querySelectorAll(".opts button").forEach(b=>{b.disabled=true;if(b.textContent==cur.correct)b.classList.add("ok");});
+    if(!ok)btn.classList.add("bad");
+  }else{
+    const n=parseFloat(String(v).replace(/[$%\s]/g,""));
+    if(isNaN(n))return;
+    ok=Math.abs(n-cur.correct)<=(cur.tol||0.011);
+    document.querySelectorAll("#ans button,#ans input").forEach(e=>e.disabled=true);
+  }
+  total++;if(ok){score++;streak++;if(streak%3==0&&level<3)level++;}else{streak=0;if(level>1&&Math.random()<.3)level--;}
+  $("sc").textContent=score+"/"+total;$("st").textContent=streak;$("lv").textContent=level;
+  const f=$("fb");f.style.display="block";
+  f.innerHTML=`<b>${ok?"Correct.":"Not quite."}</b> ${cur.exp}`;
+  $("next").style.display="inline-block";
+}
+$("next").onclick=show;
+show();
+</script></body></html>

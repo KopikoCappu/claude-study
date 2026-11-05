@@ -1,0 +1,12 @@
+{
+  "title": "VSEPR 3D Molecules",
+  "prompt": "a 3D model of the molecules I can rotate, with bond angles labeled",
+  "secs": 25.013,
+  "usage": {
+    "provider": "claude",
+    "model": "claude-sonnet-5-5",
+    "inputTokens": 1430,
+    "outputTokens": 4193,
+    "costUsd": 0.04479
+  }
+}

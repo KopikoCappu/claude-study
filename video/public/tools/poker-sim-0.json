@@ -1,0 +1,12 @@
+{
+  "title": "Pot Odds Table",
+  "prompt": "deal me hands like this with the cards on a poker table and let me decide call or fold, then show the pot odds vs my equity and the EV",
+  "secs": 56.894,
+  "usage": {
+    "provider": "claude",
+    "model": "claude-sonnet-5-5",
+    "inputTokens": 1523,
+    "outputTokens": 7851,
+    "costUsd": 0.081556
+  }
+}

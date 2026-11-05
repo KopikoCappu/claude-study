@@ -1,0 +1,12 @@
+{
+  "title": "Pot Odds EV Simulator",
+  "prompt": "a card simulator: show my hole cards, the board and the bet, I choose call or fold, then animate the EV of my choice",
+  "secs": 16.802,
+  "usage": {
+    "provider": "claude",
+    "model": "claude-sonnet-5-5",
+    "inputTokens": 1519,
+    "outputTokens": 2727,
+    "costUsd": 0.030308
+  }
+}

@@ -1,0 +1,87 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pot Odds EV Simulator</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,Roboto,"Segoe UI",sans-serif;background:#fafafa;color:#1C1C1E;padding:12px;max-width:900px;margin:auto}
+h1{font-size:20px;margin:0 0 2px}
+.hint{font-size:13px;color:#555;margin:0 0 10px}
+.card{background:#fff;border:1px solid #e3e3e6;border-radius:12px;padding:12px;margin-bottom:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.pc{width:48px;height:68px;border:1px solid #bbb;border-radius:8px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:20px;line-height:1.1}
+.pc.r{color:#c62828}
+.pc.empty{background:#eef;border-style:dashed;color:#99a}
+.lbl{font-size:12px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin:0 0 6px}
+button{font:inherit;min-height:46px;padding:0 18px;border-radius:10px;border:1px solid #0a6;background:#0a6;color:#fff;cursor:pointer;flex:1}
+button.alt{background:#fff;color:#0a6}
+button:disabled{opacity:.4}
+.info{font-size:15px;line-height:1.5}
+.bar{height:26px;background:#eee;border-radius:8px;position:relative;overflow:hidden}
+.fill{height:100%;background:#0a6;width:0;transition:width .3s}
+.mark{position:absolute;top:0;bottom:0;width:2px;background:#c62828}
+#ev{font-size:34px;font-weight:700;text-align:center;margin:4px 0}
+.pos{color:#0a6}.neg{color:#c62828}
+#fb{font-size:14px;line-height:1.5}
+</style></head><body>
+<h1>Call or Fold: EV Simulator</h1>
+<p class="hint">Decide, then watch the EV of your choice tick up. Difficulty changes the outs.</p>
+<div class="card"><p class="lbl">Your hand</p><div class="row" id="hand"></div>
+<p class="lbl" style="margin-top:10px">Board</p><div class="row" id="board"></div></div>
+<div class="card info" id="sit"></div>
+<div class="row"><button id="call">Call</button><button class="alt" id="fold">Fold</button></div>
+<div class="card" style="margin-top:10px">
+<p class="lbl">Equity (bar) vs pot odds (red line)</p>
+<div class="bar"><div class="fill" id="fill"></div><div class="mark" id="mark"></div></div>
+<div id="ev">—</div>
+<div id="fb">Choose call or fold.</div></div>
+<div class="row"><button class="alt" id="next">Next hand</button><div id="score" class="info">Score: 0/0</div></div>
+<script>
+const S={'♥':'r','♦':'r','♠':'','♣':''};
+let sc=0,n=0,cur,anim,streak=0;
+const R=a=>a[Math.floor(Math.random()*a.length)];
+function pc(c){return `<div class="pc ${S[c[1]]}">${c[0]}<span>${c[1]}</span></div>`}
+function gen(first){
+ let pot,bet,outs,hand,board,desc;
+ if(first){pot=60;bet=20;outs=9;hand=['A♥','K♥'];board=['Q♥','7♥','2♣'];desc='flush draw'}
+ else{
+  const types=[
+   {o:9,d:'flush draw',h:['A♠','J♠'],b:['9♠','4♠','K♦']},
+   {o:8,d:'open-ended straight draw',h:['9♦','8♣'],b:['7♥','6♠','2♦']},
+   {o:4,d:'gutshot straight draw',h:['T♣','9♥'],b:['7♦','6♠','K♣']},
+   {o:15,d:'flush draw + open-ended straight draw',h:['9♥','8♥'],b:['7♥','6♥','2♣']}];
+  const t=R(types);outs=t.o;hand=t.h;board=t.b;desc=t.d;
+  if(streak>=3){const x=R([40,60,80,100,120]);pot=x;}else pot=R([40,60,80,100]);
+  bet=R([10,20,30,40,50]);
+ }
+ return{pot,bet,outs,hand,board,desc,eq:Math.min(outs*4,100)/100};
+}
+function show(first){
+ cur=gen(first);cur.done=false;
+ hand.innerHTML=cur.hand.map(pc).join('');
+ board.innerHTML=cur.board.map(pc).join('')+'<div class="pc empty">?</div><div class="pc empty">?</div>';
+ const win=cur.pot+cur.bet;
+ cur.win=win;cur.odds=cur.bet/(win+cur.bet);
+ sit.innerHTML=`You have a <b>${cur.desc}</b> (${cur.outs} outs). Pot is $${cur.pot}, villain bets $${cur.bet}. Call $${cur.bet} to win $${win}.<br>Estimate your equity with the rule of 4 (outs × 4), and compare to pot odds.`;
+ fill.style.width='0';mark.style.left=(cur.odds*100)+'%';
+ ev.textContent='—';ev.className='';fb.textContent='Choose call or fold.';
+ call.disabled=fold.disabled=false;
+}
+function choose(c){
+ if(cur.done)return;cur.done=true;call.disabled=fold.disabled=true;
+ const e=cur.eq,evc=e*cur.win-(1-e)*cur.bet;
+ const best=evc>0?'call':'fold';
+ const ok=c===best;n++;if(ok){sc++;streak++}else streak=0;
+ score.textContent=`Score: ${sc}/${n}`;
+ const target=c==='call'?evc:0;
+ fill.style.width=(e*100)+'%';
+ const t0=performance.now();cancelAnimationFrame(anim);
+ (function f(t){const p=Math.min((t-t0)/1200,1),v=target*p;
+  ev.textContent=(v>=0?'+$':'−$')+Math.abs(v).toFixed(2);
+  ev.className=v>=0?'pos':'neg';
+  if(p<1)anim=requestAnimationFrame(f)})(t0);
+ fb.innerHTML=`<b>${ok?'Correct.':'Not quite.'}</b> Equity ≈ ${cur.outs} × 4 = ${(e*100).toFixed(0)}%. Pot odds = ${cur.bet} / (${cur.win} + ${cur.bet}) = ${(cur.odds*100).toFixed(1)}%.<br>EV(call) = ${e.toFixed(2)} × ${cur.win} − ${(1-e).toFixed(2)} × ${cur.bet} = <b>${evc>=0?'+':'−'}$${Math.abs(evc).toFixed(2)}</b>. ${best==='call'?'Equity beats pot odds, so call.':'Equity is below pot odds, so fold.'} Folding has EV $0.${c==='fold'&&evc>0?' You gave up '+'$'+evc.toFixed(2)+'.':''}`;
+}
+call.onclick=()=>choose('call');fold.onclick=()=>choose('fold');
+next.onclick=()=>show(false);
+show(true);
+</script></body></html>

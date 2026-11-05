@@ -1,0 +1,98 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Needleman-Wunsch Grid Practice</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:12px;font-family:-apple-system,Roboto,"Segoe UI",sans-serif;background:#fcfcfd;color:#1C1C1E;max-width:900px;margin:auto}
+h1{font-size:20px;margin:0 0 4px}
+.hint{font-size:13px;color:#555;margin-bottom:10px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:14px}
+button,select{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid #ccc;background:#fff;min-height:44px}
+button.p{background:#2A6DF4;color:#fff;border-color:#2A6DF4}
+.wrap{overflow-x:auto;max-width:100%}
+table{border-collapse:collapse;margin:auto}
+td,th{width:44px;height:44px;text-align:center;padding:0;font-size:15px}
+th{color:#2A6DF4;font-weight:600}
+td input{width:42px;height:42px;text-align:center;font:inherit;border:1px solid #ccc;border-radius:8px;padding:0}
+td input:focus{outline:2px solid #2A6DF4}
+td.g{background:#f0f0f3;border-radius:8px}
+td input.ok{background:#e3f6e8;border-color:#3a9d5d}
+td input.bad{background:#fde8e8;border-color:#d33}
+.msg{margin-top:10px;padding:10px;border-radius:10px;background:#f2f5fe;font-size:14px;min-height:20px}
+.rule{font-size:13px;color:#444;margin-bottom:8px}
+</style></head><body>
+<h1>Fill the Scoring Grid</h1>
+<div class="hint">Needleman-Wunsch: type each score, then Check. Tap a cell and use "Explain cell" for its working.</div>
+<div class="rule">match +1, mismatch −1, gap −2. F(i,j) = max(diag + s, up + gap, left + gap)</div>
+<div class="bar">
+<select id="mode"><option value="0">Example: GATTACA / GCATGCA</option><option value="1">Random short (4×4)</option><option value="2">Random medium (5×6)</option></select>
+<button class="p" id="newb">New grid</button>
+<span id="score"></span>
+</div>
+<div class="bar">
+<button id="chk" class="p">Check</button><button id="exp">Explain cell</button><button id="rev">Reveal</button>
+<label style="font-size:14px"><input type="checkbox" id="pre" checked> Prefill first row/col</label>
+</div>
+<div class="wrap"><table id="t"></table></div>
+<div class="msg" id="msg">Start filling in the grid.</div>
+<script>
+const M=1,X=-1,G=-2;
+let a,b,F,sel=null,solved=0,total=0,ex=["GATTACA","GCATGCA"];
+const $=id=>document.getElementById(id);
+function rnd(n){let s="";for(let i=0;i<n;i++)s+="ACGT"[Math.random()*4|0];return s}
+function newGrid(){
+ const m=$("mode").value;
+ if(m==="0"){a=ex[0];b=ex[1]}
+ else if(m==="1"){a=rnd(4);b=rnd(4)}
+ else{a=rnd(5);b=rnd(6)}
+ F=[];
+ for(let i=0;i<=a.length;i++){F[i]=[];for(let j=0;j<=b.length;j++){
+  if(i==0)F[i][j]=j*G;else if(j==0)F[i][j]=i*G;
+  else F[i][j]=Math.max(F[i-1][j-1]+(a[i-1]==b[j-1]?M:X),F[i-1][j]+G,F[i][j-1]+G)}}
+ build();
+}
+function build(){
+ const t=$("t");t.innerHTML="";sel=null;
+ let h="<tr><th></th><th>–</th>";for(const c of b)h+="<th>"+c+"</th>";h+="</tr>";
+ t.innerHTML=h;
+ for(let i=0;i<=a.length;i++){
+  const r=t.insertRow();const th=document.createElement("th");th.textContent=i?a[i-1]:"–";r.appendChild(th);
+  for(let j=0;j<=b.length;j++){
+   const td=r.insertCell();
+   if((i==0||j==0)&&$("pre").checked){td.className="g";td.textContent=F[i][j];continue}
+   const inp=document.createElement("input");inp.type="text";inp.inputMode="numeric";
+   inp.dataset.i=i;inp.dataset.j=j;
+   inp.onfocus=()=>sel=[i,j];
+   inp.oninput=()=>inp.className="";
+   td.appendChild(inp);
+  }}
+ $("msg").textContent="Start filling in the grid.";
+}
+function val(i,j){
+ if((i==0||j==0)&&$("pre").checked)return F[i][j];
+ const e=document.querySelector(`input[data-i="${i}"][data-j="${j}"]`);return e?e.value.trim():null}
+function inputs(){return [...document.querySelectorAll("#t input")]}
+$("chk").onclick=()=>{
+ let ok=0,bad=0,empty=0;
+ inputs().forEach(e=>{
+  const v=e.value.trim();
+  if(v===""){empty++;e.className="";return}
+  if(parseInt(v,10)===F[e.dataset.i][e.dataset.j]&&/^-?\d+$/.test(v.replace("−","-"))){e.className="ok";ok++}
+  else{e.className="bad";bad++}});
+ let s=`${ok} correct, ${bad} wrong, ${empty} empty.`;
+ if(!bad&&!empty){s+=" Grid complete! Final score F("+a.length+","+b.length+") = "+F[a.length][b.length]+".";solved++;total++}
+ else if(bad)s+=" Tip: select a red cell and press Explain cell.";
+ $("msg").textContent=s;$("score").textContent="Grids completed: "+solved;
+};
+$("exp").onclick=()=>{
+ if(!sel){$("msg").textContent="Tap a cell first.";return}
+ const[i,j]=sel;
+ if(i==0||j==0){$("msg").textContent=`Edge cell: ${Math.max(i,j)} × gap(−2) = ${F[i][j]}.`;return}
+ const s=a[i-1]==b[j-1]?M:X;
+ const d=F[i-1][j-1],u=F[i-1][j],l=F[i][j-1];
+ $("msg").textContent=`F(${i},${j}) for ${a[i-1]} vs ${b[j-1]} (${s>0?"match +1":"mismatch −1"}): diag ${d}${s>0?"+":""}${s} = ${d+s}; up ${u}−2 = ${u+G}; left ${l}−2 = ${l+G}. Max = ${F[i][j]}.`;
+};
+$("rev").onclick=()=>{inputs().forEach(e=>{e.value=F[e.dataset.i][e.dataset.j];e.className=""});$("msg").textContent="Revealed. Final score: "+F[a.length][b.length]+". Trace back from the bottom-right to get the alignment."};
+$("newb").onclick=newGrid;$("mode").onchange=newGrid;$("pre").onchange=build;
+newGrid();
+</script></body></html>

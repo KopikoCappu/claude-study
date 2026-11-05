@@ -1,0 +1,12 @@
+{
+  "title": "Punnett Square Practice",
+  "prompt": "let me practice filling in Punnett squares for different crosses and predict the ratios",
+  "secs": 164.818,
+  "usage": {
+    "provider": "gemini",
+    "model": "gemini-flash-latest",
+    "inputTokens": 1048,
+    "outputTokens": 8646,
+    "costUsd": null
+  }
+}

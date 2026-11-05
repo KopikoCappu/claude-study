@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Study · Handwritten notes with an AI tutor</title>
+<meta name="description" content="Handwritten notes with a built-in AI study buddy that circles your mistakes and writes back right on your page.">
+<meta property="og:title" content="Claude Study">
+<meta property="og:description" content="Your notes, marked up by AI. Lasso your handwriting and the AI circles the mistake and explains it in the margin.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAF9F6; --paper: #FFFFFF; --text: #1C1B22; --muted: #5F5C6E; --line: #E7E4EE;
+    --rule: #DCE6F5; --margin: #F2C2C2; --brand: #C96442; --brand-ink: #FFFFFF; --brand-soft: #F5E3DA;
+    --ai-red: #E5383B; --ai-green: #1E9E57; --ink: #1F2A44; --shadow: 0 1px 2px rgba(20,16,40,.06), 0 12px 40px rgba(20,16,40,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121118; --paper: #1C1A24; --text: #EDEBF5; --muted: #A7A3B8; --line: #2C2938;
+      --rule: #2A3346; --margin: #4A2B30; --brand: #8C76FF; --brand-ink: #FFFFFF; --brand-soft: #241F3D;
+      --ai-red: #FF6B6E; --ai-green: #4FD18A; --ink: #DCE3F5; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 40px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121118; --paper: #1C1A24; --text: #EDEBF5; --muted: #A7A3B8; --line: #2C2938;
+    --rule: #2A3346; --margin: #4A2B30; --brand: #8C76FF; --brand-ink: #FFFFFF; --brand-soft: #241F3D;
+    --ai-red: #FF6B6E; --ai-green: #4FD18A; --ink: #DCE3F5; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 40px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 Inter, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 720px) { .wrap { padding: 0 32px; } }
+
+  /* nav */
+  nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; text-decoration: none; letter-spacing: -0.02em; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 9px; background: var(--brand); display: grid; place-items: center; }
+  .brand-mark img { width: 30px; height: 30px; }
+  .nav-links { display: flex; align-items: center; gap: 18px; font-size: 14px; font-weight: 500; }
+  .nav-links a { text-decoration: none; color: var(--muted); }
+  .nav-links a:hover { color: var(--text); }
+  @media (max-width: 560px) { .nav-links .hide-sm { display: none; } }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 20px; border-radius: 999px; font-weight: 600; font-size: 15px; text-decoration: none; border: 1px solid transparent; transition: transform .15s ease, box-shadow .15s ease; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--brand); color: var(--brand-ink); box-shadow: 0 6px 20px color-mix(in srgb, var(--brand) 35%, transparent); }
+  .btn-ghost { border-color: var(--line); background: var(--paper); color: var(--text); }
+  .nav-links .btn { min-height: 38px; padding: 0 16px; font-size: 14px; color: var(--brand-ink); }
+
+  /* hero */
+  .hero { display: grid; gap: 40px; align-items: center; padding: 32px 0 72px; }
+  @media (min-width: 900px) { .hero { grid-template-columns: 1fr 1.05fr; gap: 56px; padding: 56px 0 96px; } }
+  .eyebrow { display: inline-block; background: var(--brand-soft); color: var(--brand); font-weight: 600; font-size: 13px; padding: 5px 12px; border-radius: 999px; }
+  h1 { font-size: clamp(40px, 6.4vw, 66px); line-height: 1.02; letter-spacing: -0.035em; margin: 18px 0 18px; font-weight: 800; }
+  h1 .hand { font-family: Caveat, cursive; font-weight: 700; color: var(--ai-red); font-size: 1.12em; letter-spacing: 0; white-space: nowrap; }
+  .lede { font-size: 18px; color: var(--muted); max-width: 520px; margin: 0 0 28px; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 12px; }
+  .fine { font-size: 13px; color: var(--muted); margin-top: 14px; }
+
+  /* notebook mock */
+  .page { background: var(--paper); border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); overflow: hidden; }
+  .page svg { display: block; width: 100%; height: auto; }
+  .hw { font-family: Caveat, cursive; font-weight: 500; fill: var(--ink); }
+  .ai { font-family: Caveat, cursive; font-weight: 700; }
+  .draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1.1s ease forwards; }
+  .d1 { animation-delay: .5s; } .d2 { animation-delay: 1.3s; } .d3 { animation-delay: 1.7s; }
+  .fade { opacity: 0; animation: fade .6s ease forwards; }
+  .f1 { animation-delay: 1.5s; } .f2 { animation-delay: 1.9s; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @keyframes fade { to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .draw, .fade { animation: none; stroke-dashoffset: 0; opacity: 1; } }
+
+  /* sections */
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.03em; line-height: 1.1; margin: 0 0 12px; font-weight: 800; }
+  .sub { color: var(--muted); font-size: 17px; max-width: 620px; margin: 0 0 40px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 960px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
+  .card h3 { margin: 12px 0 6px; font-size: 17px; letter-spacing: -0.01em; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .icon { width: 40px; height: 40px; border-radius: 10px; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; }
+  .icon svg { width: 22px; height: 22px; }
+
+  .steps { display: grid; gap: 16px; counter-reset: s; }
+  @media (min-width: 820px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+  .step { padding: 22px; border-radius: 16px; background: var(--paper); border: 1px solid var(--line); }
+  .step::before { counter-increment: s; content: counter(s); font-family: Caveat, cursive; font-weight: 700; font-size: 34px; color: var(--brand); line-height: 1; }
+  .step h3 { margin: 6px 0 6px; font-size: 17px; }
+  .step p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  .split { display: grid; gap: 24px; }
+  @media (min-width: 860px) { .split { grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; } }
+  .checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  .checks li { display: flex; gap: 12px; align-items: flex-start; }
+  .checks svg { flex: none; width: 22px; height: 22px; color: var(--ai-green); margin-top: 2px; }
+
+  .cta-band { background: var(--brand); color: #fff; border-radius: 24px; padding: 40px 24px; text-align: center; }
+  .cta-band h2 { color: #fff; }
+  .cta-band p { color: rgba(255,255,255,.85); margin: 0 auto 24px; max-width: 520px; }
+  .cta-band .btn-primary { background: #fff; color: #3B23C4; box-shadow: none; }
+  .cta-band .btn-ghost { background: transparent; border-color: rgba(255,255,255,.45); color: #fff; }
+  .cta-band .ctas { justify-content: center; }
+
+  footer { padding: 40px 0 56px; color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
+  footer .links { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+  footer a { text-decoration: none; } footer a:hover { color: var(--text); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="/"><span class="brand-mark"><img src="/logo-white.svg" alt=""></span>Claude Study</a>
+    <div class="nav-links">
+      <a class="hide-sm" href="#features">Features</a>
+      <a class="hide-sm" href="#privacy">Privacy</a>
+      <a class="btn btn-primary" href="https://kober.vercel.app">Open app</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <span class="eyebrow">Android beta now open</span>
+      <h1>Your notes, <span class="hand">marked up</span> by AI.</h1>
+      <p class="lede">Claude Study is a handwriting-first notes app with a study buddy built in. Lasso your work and it circles the mistake, checks what's right, and explains it in the margin, right on your page.</p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="mailto:podplananything@gmail.com?subject=Claude%20Study%20Android%20beta&amp;body=Hi!%20I'd%20like%20to%20join%20the%20Claude%20Study%20Android%20beta.%20My%20Google%20account%20email%20is%3A%20">Join the Android beta</a>
+        <a class="btn btn-ghost" href="https://kober.vercel.app">Try it in your browser</a>
+      </div>
+      <p class="fine">Free app. Runs on your own Claude API key.</p>
+    </div>
+
+    <div class="page" role="img" aria-label="A handwritten algebra problem. The AI circled the wrong step in red and wrote: 11 minus 3 is 8, not 14.">
+      <svg viewBox="0 0 560 420" xmlns="http://www.w3.org/2000/svg">
+        <g stroke="var(--rule)" stroke-width="1.5">
+          <line x1="0" y1="92" x2="560" y2="92"/><line x1="0" y1="144" x2="560" y2="144"/><line x1="0" y1="196" x2="560" y2="196"/>
+          <line x1="0" y1="248" x2="560" y2="248"/><line x1="0" y1="300" x2="560" y2="300"/><line x1="0" y1="352" x2="560" y2="352"/><line x1="0" y1="404" x2="560" y2="404"/>
+        </g>
+        <line x1="62" y1="0" x2="62" y2="420" stroke="var(--margin)" stroke-width="2"/>
+        <text class="hw" x="84" y="60" font-size="26" opacity=".7">Solve for x</text>
+        <text class="hw" x="92" y="134" font-size="40">2x + 3 = 11</text>
+        <text class="hw" x="92" y="238" font-size="40">2x = 14</text>
+        <text class="hw" x="92" y="342" font-size="40">x = 7</text>
+
+        <!-- AI ink -->
+        <path class="draw d1" pathLength="1" fill="none" stroke="var(--ai-red)" stroke-width="3.5" stroke-linecap="round"
+          d="M80 222 C 82 188, 160 180, 214 186 C 262 192, 270 226, 246 244 C 214 262, 120 262, 92 246 C 76 236, 78 214, 102 204"/>
+        <path class="draw d2" pathLength="1" fill="none" stroke="var(--ai-red)" stroke-width="3" stroke-linecap="round"
+          d="M262 218 C 300 206, 318 196, 336 186"/>
+        <path class="draw d3" pathLength="1" fill="none" stroke="var(--ai-red)" stroke-width="3" stroke-linecap="round" d="M326 180 L 338 185 L 330 196"/>
+        <g class="fade f1">
+          <text class="ai" x="346" y="168" font-size="30" fill="var(--ai-red)">11 − 3 = 8,</text>
+          <text class="ai" x="346" y="200" font-size="30" fill="var(--ai-red)">not 14!</text>
+          <text class="ai" x="346" y="234" font-size="24" fill="var(--ai-red)" opacity=".85">so 2x = 8</text>
+        </g>
+        <g class="fade f2">
+          <path fill="none" stroke="var(--ai-green)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" d="M268 116 l 10 12 l 22 -26"/>
+          <text class="ai" x="210" y="342" font-size="30" fill="var(--ai-red)">→ x = 4</text>
+        </g>
+      </svg>
+    </div>
+  </header>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <h2>Write like paper. Get help like a tutor.</h2>
+    <p class="sub">Everything you expect from a notes app, plus an assistant that can see your page and write on it.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+        <h3>Find my mistake</h3><p>Lasso a problem and the step that went wrong gets circled, with a note explaining why.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></svg></div>
+        <h3>Explain</h3><p>Ask about any equation, diagram or paragraph and get a plain-language explanation, with math rendered properly.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V5h16v2M9 19h6M12 5v14"/></svg></div>
+        <h3>Handwriting to text</h3><p>Turn messy handwriting into clean typed text and equations you can drop back onto the page.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 21l3.5-1L19 7.5 16.5 5 4 17.5 3 21Z"/><path d="m14 7.5 2.5 2.5"/></svg></div>
+        <h3>A pen that feels right</h3><p>Pressure-sensitive pen, highlighter, shapes, eraser and lasso, plus pen-only mode so your palm doesn't draw.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg></div>
+        <h3>Pages, folders, PDFs</h3><p>Paged notebooks, colorful folders, photos of worksheets, PDF import and PDF export.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 8.5a4.5 4.5 0 0 1-1 9.5H7Z"/></svg></div>
+        <h3>Sync everywhere</h3><p>An optional account keeps your notes in sync between your tablet, phone and laptop.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">Three steps, no copy-pasting screenshots into a chatbot.</p>
+    <div class="steps">
+      <div class="step"><h3>Write</h3><p>Take notes or work a problem by hand, just like on paper.</p></div>
+      <div class="step"><h3>Lasso</h3><p>Circle the part you're stuck on and tap Find mistake, Explain, or ask your own question.</p></div>
+      <div class="step"><h3>Read the margins</h3><p>The answer shows up in a side panel, and the AI marks up your page in red and green ink.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="privacy">
+  <div class="wrap split">
+    <div>
+      <h2>Your notes stay yours.</h2>
+      <p class="sub" style="margin-bottom:0">Claude Study is built so we never see your work and never spend your money behind your back.</p>
+    </div>
+    <ul class="checks">
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg><span><b>Bring your own AI key.</b> Use your Claude API key and pay Anthropic directly. It's stored only on your device, encrypted, and never uploaded.</span></li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg><span><b>No ads, no tracking.</b> No analytics SDKs, and we never sell your data.</span></li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg><span><b>Local first.</b> Notes live on your device. An account and cloud sync are optional.</span></li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg><span><b>Delete anytime.</b> Remove your account and everything in it from the app in two taps. <a href="/privacy">Read the privacy policy</a>.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="cta-band">
+      <h2>Help us test Claude Study</h2>
+      <p>We're running a closed beta on Google Play. Email us the Google account you use on your Android phone or tablet and we'll send you an invite.</p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="mailto:podplananything@gmail.com?subject=Claude%20Study%20Android%20beta&amp;body=Hi!%20I'd%20like%20to%20join%20the%20Claude%20Study%20Android%20beta.%20My%20Google%20account%20email%20is%3A%20">Join the Android beta</a>
+        <a class="btn btn-ghost" href="https://kober.vercel.app">Try it in your browser</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <footer>
+    <span>© 2026 Claude Study</span>
+    <div class="links">
+      <a href="/privacy">Privacy policy</a>
+      <a href="/delete-account">Delete your account</a>
+      <a href="mailto:podplananything@gmail.com">Contact</a>
+      <a href="https://kober.vercel.app">Web app</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

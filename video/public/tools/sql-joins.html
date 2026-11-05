@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SQL Joins Practice</title>
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist/sql-wasm.js"></script>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;max-width:100%}
+body{font-family:-apple-system,Roboto,"Segoe UI",sans-serif;background:#fafafa;color:#1C1C1E;padding:12px;font-size:15px}
+h1{font-size:20px;margin:0 0 2px}
+.hint{color:#666;font-size:13px;margin-bottom:10px}
+.card{background:#fff;border:1px solid #e3e3e6;border-radius:12px;padding:12px;margin-bottom:10px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.pill{background:#eef3ff;color:#2457d6;border-radius:999px;padding:4px 10px;font-size:13px}
+button{font:inherit;border:0;border-radius:10px;padding:11px 14px;min-height:44px;background:#2457d6;color:#fff;cursor:pointer}
+button.sec{background:#eceef3;color:#1C1C1E}
+textarea{width:100%;min-height:90px;font:14px ui-monospace,Menlo,Consolas,monospace;border:1px solid #ccd;border-radius:10px;padding:10px;resize:vertical}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.tablewrap{overflow-x:auto;max-width:100%}
+table{border-collapse:collapse;font-size:13px;margin-top:6px}
+th,td{border:1px solid #e0e0e5;padding:4px 8px;text-align:left;white-space:nowrap}
+th{background:#f3f4f8}
+.null{color:#999;font-style:italic}
+.ok{color:#17803d;font-weight:600}.bad{color:#b3261e;font-weight:600}
+.schema{font-size:13px;line-height:1.5}
+code{background:#f1f1f4;padding:1px 4px;border-radius:4px}
+details summary{cursor:pointer;padding:6px 0;color:#2457d6}
+.q{font-size:16px;margin:4px 0 8px}
+</style>
+</head>
+<body>
+<h1>SQL Joins Practice</h1>
+<div class="hint">Write a query, run it to explore, then check it against the expected result.</div>
+
+<div class="card schema">
+<b>Schema</b><br>
+<code>students(id, name, major)</code> <code>enrollments(student_id, course_id, grade)</code> <code>courses(id, title, dept)</code>
+<details><summary>Browse table data</summary><div id="tables"></div></details>
+</div>
+
+<div class="card">
+<div class="bar"><span class="pill" id="lvl">Level 1</span><span class="pill" id="score">Score 0 / 0</span></div>
+<div class="q" id="q">Loading database...</div>
+<textarea id="sql" spellcheck="false" placeholder="SELECT ..."></textarea>
+<div class="row">
+<button id="run" class="sec">Run</button>
+<button id="check">Check answer</button>
+<button id="hintb" class="sec">Hint</button>
+<button id="next" class="sec">Next</button>
+</div>
+<div id="msg" style="margin-top:8px"></div>
+</div>
+<div class="card"><b>Your result</b><div id="out" class="tablewrap"></div></div>
+<div class="card" id="solcard" style="display:none"><b>Expected result / solution</b><pre id="sol" style="white-space:pre-wrap;font-size:13px;margin:6px 0"></pre><div id="exp" class="tablewrap"></div></div>
+
+<script>
+const $=id=>document.getElementById(id);
+let db,cur=null,score=0,total=0,level=1,streak=0,hintN=0,last=null;
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const SETUP=`
+CREATE TABLE students(id INTEGER PRIMARY KEY,name TEXT,major TEXT);
+CREATE TABLE courses(id INTEGER PRIMARY KEY,title TEXT,dept TEXT);
+CREATE TABLE enrollments(student_id INTEGER,course_id INTEGER,grade INTEGER);
+INSERT INTO students VALUES(1,'Ana','CS'),(2,'Ben','Math'),(3,'Cara','CS'),(4,'Dev','Physics'),(5,'Elle','Math'),(6,'Finn','CS');
+INSERT INTO courses VALUES(101,'Databases','CS'),(102,'Algorithms','CS'),(201,'Calculus','Math'),(202,'Statistics','Math'),(301,'Mechanics','Physics'),(302,'Optics','Physics');
+INSERT INTO enrollments VALUES(1,101,90),(1,102,85),(1,201,78),(2,201,92),(2,202,88),(3,101,70),(3,102,95),(3,202,81),(4,301,66),(4,201,74),(5,202,59),(5,201,83);
+`;
+function gen(){
+const dept=pick(['CS','Math','Physics']),major=pick(['CS','Math','Physics']),g=pick([70,75,80,85,90]),n=pick([1,2]);
+const T=[
+// level 1
+[1,()=>({q:`List the name and course title for every enrollment (INNER JOIN of all three tables) in dept '${dept}'.`,
+sql:`SELECT s.name, c.title FROM students s JOIN enrollments e ON e.student_id=s.id JOIN courses c ON c.id=e.course_id WHERE c.dept='${dept}'`,
+h:['You need all three tables joined.','Join students→enrollments on student_id, then enrollments→courses on course_id.','Filter with WHERE c.dept=...']})],
+[1,()=>({q:`List the names of students majoring in '${major}' together with the course_id of each course they take (only students with enrollments).`,
+sql:`SELECT s.name, e.course_id FROM students s INNER JOIN enrollments e ON e.student_id=s.id WHERE s.major='${major}'`,
+h:['INNER JOIN keeps only matching rows.','Join students and enrollments on s.id = e.student_id.']})],
+[1,()=>({q:`Show student name and grade for all enrollments with grade >= ${g}.`,
+sql:`SELECT s.name, e.grade FROM students s JOIN enrollments e ON e.student_id=s.id WHERE e.grade>=${g}`,
+h:['Join students and enrollments.','Add WHERE e.grade >= '+g]})],
+// level 2
+[2,()=>({q:`Using a LEFT JOIN, list every student's name and the course_id they take. Students with no enrollments must still appear (NULL course).`,
+sql:`SELECT s.name, e.course_id FROM students s LEFT JOIN enrollments e ON e.student_id=s.id`,
+h:['LEFT JOIN keeps all rows of the left table.','FROM students s LEFT JOIN enrollments e ON ...']})],
+[2,()=>({q:`List the names of students who are enrolled in no courses at all.`,
+sql:`SELECT s.name FROM students s LEFT JOIN enrollments e ON e.student_id=s.id WHERE e.student_id IS NULL`,
+h:['LEFT JOIN, then look for the NULLs on the right side.','WHERE e.student_id IS NULL']})],
+[2,()=>({q:`List the titles of courses that no student is enrolled in.`,
+sql:`SELECT c.title FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id WHERE e.course_id IS NULL`,
+h:['Keep all courses: courses is the left table.','Filter WHERE e.course_id IS NULL']})],
+// level 3
+[3,()=>({q:`For each student who has enrollments, show name and the number of courses (call it n). Order doesn't matter.`,
+sql:`SELECT s.name, COUNT(*) AS n FROM students s JOIN enrollments e ON e.student_id=s.id GROUP BY s.id, s.name`,
+h:['Join then GROUP BY student.','COUNT(*) AS n']})],
+[3,()=>({q:`For every student (including those with none) show name and number of enrollments as n.`,
+sql:`SELECT s.name, COUNT(e.course_id) AS n FROM students s LEFT JOIN enrollments e ON e.student_id=s.id GROUP BY s.id, s.name`,
+h:['You need a LEFT JOIN so zero-enrollment students stay.','COUNT(e.course_id) ignores NULLs, so it gives 0; COUNT(*) would give 1.']})],
+[3,()=>({q:`Show the names of students enrolled in at least ${n+1} courses (use HAVING), with the count as n.`,
+sql:`SELECT s.name, COUNT(*) AS n FROM students s JOIN enrollments e ON e.student_id=s.id GROUP BY s.id, s.name HAVING COUNT(*)>=${n+1}`,
+h:['GROUP BY student after the join.','HAVING filters groups: HAVING COUNT(*) >= '+(n+1)]})],
+[3,()=>({q:`For each course dept, show dept and the average grade as avg_grade (rounded to 1 decimal with ROUND(...,1)).`,
+sql:`SELECT c.dept, ROUND(AVG(e.grade),1) AS avg_grade FROM courses c JOIN enrollments e ON e.course_id=c.id GROUP BY c.dept`,
+h:['Join courses and enrollments.','GROUP BY c.dept and use AVG(e.grade).']})],
+[3,()=>({q:`List each course title with its number of enrollments as n, including courses with 0, but only those with fewer than 2 enrollments.`,
+sql:`SELECT c.title, COUNT(e.course_id) AS n FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id GROUP BY c.id, c.title HAVING COUNT(e.course_id)<2`,
+h:['LEFT JOIN from courses.','HAVING COUNT(e.course_id) < 2']})]
+];
+const pool=T.filter(t=>t[0]<=level&&(t[0]===level||Math.random()<.3||level>=3&&t[0]>=2));
+let t,tries=0;
+do{t=pick(pool.length?pool:T)[1]();tries++}while(last===t.q&&tries<10);
+return t;}
+function runq(s){
+const r=db.exec(s);
+return r.length?r[0]:{columns:[],values:[]};}
+function render(el,r){
+if(!r.columns.length){el.innerHTML='<div class="hint">No rows returned.</div>';return}
+let h='<table><tr>'+r.columns.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr>';
+r.values.forEach(v=>h+='<tr>'+v.map(x=>x===null?'<td class="null">NULL</td>':`<td>${esc(x)}</td>`).join('')+'</tr>');
+el.innerHTML=h+'</table><div class="hint">'+r.values.length+' row(s)</div>';}
+function esc(x){return String(x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function norm(r){return r.values.map(v=>v.map(x=>x===null?'NULL':String(x).toLowerCase()).join('|')).sort().join('\n')}
+function newQ(){
+cur=gen();last=cur.q;hintN=0;cur.done=false;
+$('q').textContent=cur.q;$('sql').value='';$('msg').textContent='';$('out').innerHTML='';$('solcard').style.display='none';
+$('lvl').textContent='Level '+level;}
+function showTables(){
+let h='';
+['students','enrollments','courses'].forEach(t=>{h+=`<b>${t}</b><div class="tablewrap" id="t_${t}"></div>`});
+$('tables').innerHTML=h;
+['students','enrollments','courses'].forEach(t=>render($('t_'+t),runq('SELECT * FROM '+t)));}
+$('run').onclick=()=>{
+try{render($('out'),runq($('sql').value));$('msg').textContent=''}
+catch(e){$('msg').innerHTML='<span class="bad">Error: '+esc(e.message)+'</span>'}};
+$('hintb').onclick=()=>{
+const h=cur.h;$('msg').innerHTML='<span class="hint">Hint: '+esc(h[Math.min(hintN,h.length-1)])+'</span>';hintN++;};
+$('check').onclick=()=>{
+let mine;
+try{mine=runq($('sql').value);render($('out'),mine)}
+catch(e){$('msg').innerHTML='<span class="bad">Error: '+esc(e.message)+'</span>';return}
+const exp=runq(cur.sql);
+const ok=mine.columns.length===exp.columns.length&&norm(mine)===norm(exp);
+if(!cur.done){total++;if(ok){score++;streak++;if(streak>=2&&level<3){level++;streak=0}}else streak=0;cur.done=true}
+$('score').textContent=`Score ${score} / ${total}`;
+if(ok)$('msg').innerHTML='<span class="ok">Correct. Same rows as the expected result.</span>';
+else{
+let why='Result differs from expected.';
+if(mine.columns.length!==exp.columns.length)why=`Expected ${exp.columns.length} column(s), you returned ${mine.columns.length}.`;
+else if(mine.values.length!==exp.values.length)why=`Expected ${exp.values.length} row(s), you returned ${mine.values.length}. Check join type (INNER drops unmatched rows, LEFT keeps them), WHERE/HAVING, and COUNT(*) vs COUNT(col).`;
+else why='Row counts match but values differ. Check which columns or filters you used.';
+$('msg').innerHTML='<span class="bad">Not quite.</span> '+esc(why);}
+$('solcard').style.display='block';$('sol').textContent=cur.sql;render($('exp'),exp);};
+$('next').onclick=newQ;
+initSqlJs({locateFile:f=>'https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist/'+f}).then(SQL=>{
+db=new SQL.Database();db.run(SETUP);showTables();newQ();
+}).catch(e=>{$('q').textContent='Could not load SQL engine: '+e.message});
+</script>
+</body>
+</html>
